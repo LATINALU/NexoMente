@@ -12,6 +12,8 @@ class MemoryStorage {
 beforeEach(() => {
   (globalThis as any).localStorage = new MemoryStorage();
   (globalThis as any).window = { crypto: globalThis.crypto, location: { hostname: "localhost" } };
+  // Node < 21 (el del CI) no tiene navigator global
+  Object.defineProperty(globalThis, "navigator", { value: { userAgent: "Mozilla/5.0 Test" }, configurable: true });
 });
 
 describe("SecureStorage", () => {
