@@ -10,7 +10,7 @@ Características:
 - Resúmenes automáticos
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 from datetime import datetime, timezone
 import re
 import json

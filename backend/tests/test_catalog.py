@@ -60,3 +60,18 @@ def test_loader_rejects_bad_format(tmp_path):
     (tmp_path / "x.yaml").write_text("category: {id: x, response_format: nope}\nagents: []\n", encoding="utf-8")
     with pytest.raises(CatalogError):
         load_catalog(tmp_path)
+
+
+def test_shared_prompt_is_appended_to_every_agent_of_the_category(tmp_path):
+    body = ("category: {id: x, name: X, shared_prompt: 'Regla común'}\nagents:\n"
+            "- {id: a, name: A, system_prompt: 'Propio A'}\n- {id: b, name: B, system_prompt: 'Propio B'}\n")
+    (tmp_path / "x.yaml").write_text(body, encoding="utf-8")
+    agents, _ = load_catalog(tmp_path)
+    assert agents["a"].system_prompt == "Propio A\n\nRegla común"
+    assert agents["b"].system_prompt.endswith("Regla común")
+
+
+def test_mercadolibre_agents_share_country_and_reference_rules():
+    ml = [a for a in AGENTS.values() if a.category == "mercadolibre"]
+    assert len(ml) == 10
+    assert all("País primero" in a.system_prompt and "Datos de referencia" in a.system_prompt for a in ml)

@@ -40,7 +40,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from app.agents.catalog import FORMAT_HINTS, AgentSpec
 from app.formatters.human_formatter import HumanResponseFormatter
-from app.services import web_search
+from app.services import ml_costs, web_search
 from app.services.documents import Document, Embedder, retrieve, semantic_ranking
 from app.services.llm_client import LLMClient, LLMError, ToolsUnsupported, Usage
 
@@ -65,6 +65,7 @@ TOOL_DOC_CHUNKS = 4
 _TEXT = {
     "es": {
         "identity": "Respondes siempre en español.",
+        "today": "Fecha de hoy: {date}. Ten en cuenta que reglas, precios y tarifas pueden haber cambiado después de tu entrenamiento.",
         "format": "Estructura sugerida",
         "diagrams": ("Si un diagrama aclara la respuesta (flujos, arquitecturas, cronogramas, organigramas), "
                      "inclúyelo en un bloque ```mermaid válido."),
@@ -82,6 +83,14 @@ _TEXT = {
         "synth_inputs": "Aportes de los especialistas",
         "synth_task": "Escribe la respuesta final integrada en markdown.",
         "docs": "Documentos adjuntos por el usuario (extractos relevantes)",
+        "calc": "Cálculo de costos de Mercado Libre (hecho por Nexo con código, cifras exactas)",
+        "calc_rule": ("Usa EXACTAMENTE estas cifras: no recalcules ni cambies cargos, comisiones o envíos. "
+                      "Interprétalas, explica los supuestos y recomienda. Si el usuario dio otros datos, "
+                      "señala la diferencia."),
+        "calc_missing": ("Para calcular el costo real de la venta faltan el precio de venta y/o el costo "
+                         "unitario: pídeselos al usuario y no inventes esos números."),
+        "calc_country": ("La calculadora de Nexo solo tiene tarifas de México; para {country} no hay cifras "
+                         "verificadas: no inventes comisiones ni cargos, pide los del simulador de costos."),
         "fragment": "fragmento",
         "web": "Resultados de búsqueda web",
         "cite": ("Usa estas fuentes cuando sean pertinentes y cítalas en línea como [D1] o [W2]. "
@@ -112,6 +121,7 @@ _TEXT = {
     },
     "en": {
         "identity": "Always answer in English.",
+        "today": "Today's date: {date}. Rules, prices and fees may have changed after your training.",
         "format": "Suggested structure",
         "diagrams": ("If a diagram clarifies the answer (flows, architectures, timelines, org charts), "
                      "include it in a valid ```mermaid block."),
@@ -129,6 +139,12 @@ _TEXT = {
         "synth_inputs": "Specialist contributions",
         "synth_task": "Write the integrated final answer in markdown.",
         "docs": "Documents attached by the user (relevant excerpts)",
+        "calc": "Mercado Libre cost calculation (computed by Nexo in code, exact figures)",
+        "calc_rule": ("Use EXACTLY these figures: do not recompute or change fees, commissions or shipping. "
+                      "Interpret them, explain the assumptions and recommend."),
+        "calc_missing": "To compute the real cost of the sale the price and/or unit cost are missing: ask for them.",
+        "calc_country": ("Nexo's calculator only has Mexico's fees; for {country} there are no verified "
+                         "figures: do not invent commissions or fees."),
         "fragment": "excerpt",
         "web": "Web search results",
         "cite": ("Use these sources when relevant and cite them inline as [D1] or [W2]. "
@@ -207,10 +223,12 @@ class _TokenBuffer:
         self._parts: List[str] = []
         self._size = 0
         self._last = time.monotonic()
+        self.total = 0  # caracteres recibidos en toda la ejecución
 
     async def push(self, delta: str) -> None:
         self._parts.append(delta)
         self._size += len(delta)
+        self.total += len(delta)
         if self._size >= TOKEN_FLUSH_CHARS or time.monotonic() - self._last >= TOKEN_FLUSH_SECONDS:
             await self.flush()
 
@@ -220,6 +238,13 @@ class _TokenBuffer:
         text = "".join(self._parts)
         self._parts, self._size, self._last = [], 0, time.monotonic()
         await self._emit({"type": self._type, "agent_id": self._agent_id, "delta": text})
+
+
+def _empty_answer(thinking: _TokenBuffer) -> LLMError:
+    if thinking.total:
+        return LLMError("El modelo gastó todos sus tokens razonando y no llegó a responder. "
+                        "Bajá el razonamiento en Opciones de ejecución.")
+    return LLMError("El modelo devolvió una respuesta vacía")
 
 
 @dataclass
@@ -271,14 +296,20 @@ class Orchestrator:
         self.synthesis: Optional[str] = None
         self.review_text: Optional[str] = None
         self.followups: List[str] = []
+        self.calculation = ""  # bloque de cálculo determinístico (agentes de Mercado Libre)
         self._t = _TEXT[self.language]
 
     # ------------------------------------------------------------------ prompts
 
+    @property
+    def _identity(self) -> str:
+        today = self._t["today"].format(date=datetime.now(timezone.utc).date().isoformat())
+        return f"{self._t['identity']}\n{today}"
+
     def _system_prompt(self, spec: AgentSpec) -> str:
         hint = FORMAT_HINTS.get(spec.response_format, FORMAT_HINTS["analysis"])[self.language]
         parts = [spec.system_prompt, "", self._t["focus"], f"{self._t['format']}: {hint}.", self._t["diagrams"],
-                 self._t["identity"]]
+                 self._identity]
         extra = (self.agent_instructions.get(spec.id) or "").strip()
         if extra:
             parts += ["", extra[:1500]]
@@ -289,7 +320,7 @@ class Orchestrator:
         return "\n".join(parts)
 
     def _context_block(self) -> str:
-        parts = []
+        parts = [self.calculation] if self.calculation else []
         if self.doc_snippets:
             parts.append(f"## {self._t['docs']}")
             parts += [f"[{d['label']}] {d['name']} ({self._t['fragment']} {d['chunk']}):\n{d['content']}"
@@ -450,7 +481,7 @@ class Orchestrator:
             await thinking.flush()
             result.content = "".join(chunks).strip()
             if not result.content:
-                raise LLMError("El modelo devolvió una respuesta vacía")
+                raise _empty_answer(thinking)
         except LLMError as e:
             result.error = str(e)
             logger.warning("Agente %s falló (%s/%s): %s", spec.id, getattr(self.llm, "provider", "?"),
@@ -498,6 +529,8 @@ class Orchestrator:
                 await buffer.push(delta)
             await buffer.flush()
             await thinking.flush()
+            if not "".join(chunks).strip():
+                raise _empty_answer(thinking)
         except LLMError as e:
             await self.emit({"type": "agent_error", "agent_id": agent_id, "agent": name, "error": str(e),
                              "timestamp": _now()})
@@ -519,9 +552,10 @@ class Orchestrator:
             return
         sources = "".join(f"[{src['label']}] {src['title']}\n" for src in self.sources())
         messages = [
-            {"role": "system", "content": f"{self._t['review_system']}\n{self._t['identity']}"},
+            {"role": "system", "content": f"{self._t['review_system']}\n{self._identity}"},
             {"role": "user", "content": (f"## {self._t['synth_user']}\n{task}\n\n## {self._t['synth_inputs']}\n"
-                                         f"{self._contributions(ok)}\n\n{sources + chr(10) if sources else ''}"
+                                         f"{self._contributions(ok)}\n\n{self._calc_for_inputs()}"
+                                         f"{sources + chr(10) if sources else ''}"
                                          f"{self._t['review_task']}")},
         ]
         self.review_text = await self._stream_section("review", REVIEWER_AGENT_ID, self._t["review_name"],
@@ -529,7 +563,7 @@ class Orchestrator:
 
     async def _run_followups(self, task: str, answer: str) -> None:
         messages = [
-            {"role": "system", "content": f"{self._t['followup_system']}\n{self._t['identity']}"},
+            {"role": "system", "content": f"{self._t['followup_system']}\n{self._identity}"},
             {"role": "user", "content": f"{task[:1500]}\n\n---\n{_truncate(answer, 2500)}"},
         ]
         usage = Usage()
@@ -550,12 +584,14 @@ class Orchestrator:
         if len(ok) < (1 if self.review_text else 2):
             return
         inputs = self._contributions(ok)
+        if self.calculation:
+            inputs += f"\n\n{self.calculation}"
         if self.review_text:
             inputs += f"\n\n## {self._t['review_inputs']}\n{_truncate(self.review_text, 2500)}"
         sources = self.sources()
         source_list = "".join(f"[{src['label']}] {src['title']} {src.get('url', '')}\n" for src in sources)
         messages = [
-            {"role": "system", "content": f"{self._t['synth_system']}\n{self._t['identity']}"
+            {"role": "system", "content": f"{self._t['synth_system']}\n{self._identity}"
                                           + (f"\n{self._t['synth_cite']}" if sources else "")},
             *self.history,
             {"role": "user", "content": (f"## {self._t['synth_user']}\n{task}\n\n## {self._t['synth_inputs']}\n"
@@ -570,6 +606,28 @@ class Orchestrator:
                  "chunk": d["chunk"]} for d in self.doc_snippets]
         web = [{"label": w["label"], "kind": "web", "title": w["title"], "url": w["url"]} for w in self.web_sources]
         return docs + web
+
+    def _calc_for_inputs(self) -> str:
+        return f"{self.calculation}\n\n" if self.calculation else ""
+
+    async def _prepare_calculation(self, task: str) -> None:
+        """Si hay agentes de Mercado Libre y la consulta trae números, calcula los costos con código."""
+        if not any(a.category == "mercadolibre" for a in self.agents):
+            return
+        usage = Usage()
+        try:
+            sale, reason = await ml_costs.extract_sale(task, self.llm, usage)
+        finally:
+            self.usage.add(usage)
+        if sale:
+            table = ml_costs.render_markdown(sale)
+            self.calculation = f"## {self._t['calc']}\n{self._t['calc_rule']}\n\n{table}"
+            await self.emit({"type": "calculation", "title": self._t["calc"], "content": table,
+                             "timestamp": _now()})
+        elif reason == "faltan_datos":
+            self.calculation = f"## {self._t['calc']}\n{self._t['calc_missing']}"
+        elif reason.startswith("pais:"):
+            self.calculation = f"## {self._t['calc']}\n" + self._t["calc_country"].format(country=reason[5:])
 
     async def _ensure_prefetch(self, task: str) -> None:
         async with self._prefetch_lock:
@@ -600,8 +658,10 @@ class Orchestrator:
         max_tokens = tokens_per_agent(len(self.agents))
         await self.emit({"type": "pipeline_start", "mode": self.mode, "synthesis": self.synthesize,
                          "total_agents": len(self.agents), "agents": [self._public(a) for a in self.agents],
+                         "review": self.review,
                          "web_search": bool(self.web_search_config), "documents": len(self.documents),
                          "tool_mode": "native" if self.native_tools else "prefetch", "timestamp": _now()})
+        await self._prepare_calculation(task)
         if not self.native_tools:
             await self._ensure_prefetch(task)
 

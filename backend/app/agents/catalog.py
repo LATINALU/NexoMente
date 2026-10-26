@@ -5,9 +5,12 @@ Fuente única de verdad de los agentes: un YAML por categoría en
 app/agents/catalog/. Agregar un agente = agregar una entrada al YAML.
 
 Cada archivo:
-    category: {id, name, emoji, description, color, response_format}
+    category: {id, name, emoji, description, color, response_format, shared_prompt?}
     agents:   [{id, name, emoji, description, short_description, specialization,
                 complexity, capabilities, backstory, system_prompt}]
+
+`shared_prompt` (opcional) se agrega al final del prompt de cada agente de la categoría:
+reglas y datos comunes (p. ej. país, vigencia de tarifas) escritos una sola vez.
 """
 
 from __future__ import annotations
@@ -118,6 +121,7 @@ def load_catalog(directory: Path = CATALOG_DIR) -> Tuple[Dict[str, AgentSpec], D
             description=cat.get("description", ""), color=cat.get("color", "#6366F1"),
             response_format=response_format,
         )
+        shared = (cat.get("shared_prompt") or "").strip()
         for raw in doc.get("agents") or []:
             missing = [f for f in _REQUIRED_AGENT_FIELDS if not raw.get(f)]
             if missing:
@@ -128,7 +132,8 @@ def load_catalog(directory: Path = CATALOG_DIR) -> Tuple[Dict[str, AgentSpec], D
                 id=raw["id"], name=raw["name"], emoji=raw.get("emoji", "🤖"), category=cat_id,
                 description=raw.get("description", ""), short_description=raw.get("short_description", ""),
                 specialization=raw.get("specialization", ""), complexity=raw.get("complexity", "intermediate"),
-                system_prompt=raw["system_prompt"].strip(), backstory=(raw.get("backstory") or "").strip(),
+                system_prompt="\n\n".join(p for p in (raw["system_prompt"].strip(), shared) if p),
+                backstory=(raw.get("backstory") or "").strip(),
                 response_format=raw.get("response_format", response_format),
                 capabilities=tuple(raw.get("capabilities") or ()),
             )

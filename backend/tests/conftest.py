@@ -25,7 +25,7 @@ class FakeLLM:
         self.thinking = thinking
         self.calls = []
 
-    async def stream(self, messages, max_tokens=2048, temperature=0.7, usage=None, on_reasoning=None):
+    async def stream(self, messages, max_tokens=2048, temperature=0.7, usage=None, on_reasoning=None, reasoning=None):
         import asyncio
         from app.services.llm_client import LLMError, Usage
 

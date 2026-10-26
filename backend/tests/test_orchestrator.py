@@ -169,3 +169,18 @@ def test_prefilter_ranks_by_field_and_diversifies():
     marketing = diversified(prefilter("plan de marketing para lanzar una cafetería"), 4)
     assert marketing[0].category == "marketing"
     assert max(sum(1 for a in marketing if a.category == c) for c in {a.category for a in marketing}) <= 2
+
+
+def test_reasoning_without_answer_explains_the_cause():
+    rec = Recorder()
+    llm = FakeLLM(thinking="Pienso y pienso...", replies={A.system_prompt[:40]: ""})
+    run(Orchestrator([A], llm, rec, followups=False).run("x"))
+    error = next(e for e in rec.events if e["type"] == "agent_error")
+    assert "razonando" in error["error"]
+
+
+def test_prompts_include_todays_date():
+    from datetime import datetime, timezone
+    llm = FakeLLM()
+    run(Orchestrator([A], llm, Recorder(), followups=False).run("x"))
+    assert datetime.now(timezone.utc).date().isoformat() in llm.calls[0][0]["content"]

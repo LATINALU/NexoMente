@@ -10,7 +10,7 @@ API_CONFIG = {"type": "groq", "apiKey": "gsk_" + "x" * 40}
 @pytest.fixture(scope="module")
 def client():
     mp = pytest.MonkeyPatch()
-    mp.setattr(main, "LLMClient", lambda cfg, model: FakeLLM())
+    mp.setattr(main, "LLMClient", lambda cfg, model, **kw: FakeLLM())
     with TestClient(main.app) as c:  # sin DB ni Redis: el lifespan degrada a memoria
         yield c
     mp.undo()

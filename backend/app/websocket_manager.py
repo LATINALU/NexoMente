@@ -14,8 +14,6 @@ Características:
 from fastapi import WebSocket
 from typing import Dict, List, Optional
 import logging
-import json
-import asyncio
 from datetime import datetime, timezone
 
 logger = logging.getLogger("nexo.websocket_manager")

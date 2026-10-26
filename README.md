@@ -27,6 +27,8 @@ Elegís un equipo de especialistas (o dejás que Nexo lo arme), los agentes trab
 | 👥 **Equipos guardados** | Guardá agentes + modo + síntesis + web + instrucciones como un equipo reutilizable. |
 | 🌿 **Ramas y edición** | Editá cualquier mensaje anterior o regenerá: se crea una rama y navegás entre versiones con **‹ 1/2 ›**. |
 | 🪄 **Sugerir agentes** | Describí la tarea y Nexo propone el equipo. |
+| 🧠 **Razonamiento ajustable** | Para modelos que "piensan" (Gemma 4, Qwen 3, o-series, Gemini): Automático, Apagado, Bajo o Alto. Apagado acelera mucho los modelos locales; las tareas cortas internas (seguimientos, sugerencias, OCR) siempre van sin razonar. |
+| 🧮 **Calculadora de Mercado Libre** | Con agentes de Mercado Libre, Nexo extrae precio y costo de la consulta y calcula con código (no con el modelo) comisión + IVA, cargo fijo por tramo, envío según el umbral de envío gratis, contribución, ROAS y precio de equilibrio, y escenarios Clásica/Premium y cruzar el umbral. Los agentes reciben esas cifras exactas. Tarifas de México en `backend/app/services/ml_costs.py`. |
 | 🔀 **Modos** | Paralelo (todos a la vez) o secuencial (cada agente ve un resumen de los anteriores). |
 | ✍️ **Instrucciones por agente** | Tono, formato o restricciones propias (botón ⓘ en la barra lateral). |
 | 💬 **Contexto** | Las preguntas de seguimiento incluyen el historial; con cuenta, también tu memoria persistente. |

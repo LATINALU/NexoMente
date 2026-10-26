@@ -35,7 +35,7 @@ from app.agents.catalog import (
 )
 from app.websocket_manager import manager
 from app.services.agent_router import suggest_agents
-from app.services.llm_client import LLMClient
+from app.services.llm_client import REASONING_LEVELS, LLMClient
 from app.services.documents import Embedder, load_documents
 from app.services.orchestrator import Orchestrator, sanitize_history
 from app.services.web_search import validate_search_config
@@ -74,7 +74,6 @@ async def lifespan(app: FastAPI):
     # Los servicios son independientes: se conectan en paralelo
     await asyncio.gather(init_postgres(), init_redis(), get_tracker(REDIS_URL).connect())
     yield
-    from app.pg_database import pg_db
     await pg_db.close()
 
 
@@ -223,11 +222,13 @@ class ChatRun:
     followups: bool
 
 
-def _build_llm(api_config: Optional[Dict], model: str) -> LLMClient:
+def _build_llm(api_config: Optional[Dict], model: str, reasoning: Any = None) -> LLMClient:
     parsed = SecurityValidator.validate_api_config(api_config) if api_config else {}
     if not parsed:
         raise ChatInputError("Configura una API key válida en Ajustes antes de chatear")
-    return LLMClient(parsed, SecurityValidator.validate_model_name(model))
+    # "auto" (o ausente) deja el razonamiento a criterio del proveedor
+    return LLMClient(parsed, SecurityValidator.validate_model_name(model),
+                     reasoning=reasoning if reasoning in REASONING_LEVELS else None)
 
 
 def _build_embedder(cfg: Any) -> Optional[Embedder]:
@@ -255,7 +256,7 @@ def _prepare_chat(data: Dict[str, Any]) -> ChatRun:
         message=message,
         agents=agents,
         model=model,
-        llm=_build_llm(data.get("apiConfig"), model),
+        llm=_build_llm(data.get("apiConfig"), model, data.get("reasoning")),
         language=data.get("language") if data.get("language") in ("es", "en") else "es",
         mode=data.get("mode") if data.get("mode") in ("parallel", "sequential") else "parallel",
         synthesize=data.get("synthesize", True) is not False,
@@ -343,6 +344,11 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         except ChatInputError as e:
             await emit({"type": "error", "message": str(e)})
             return
+        except Exception:
+            # Sin este aviso el cliente quedaría esperando una consulta que nunca empezó
+            logger.exception("Error preparando la consulta")
+            await emit({"type": "error", "message": "Error interno preparando la consulta"})
+            return
         if len(str(data.get("message") or "")) > MAX_MESSAGE_LENGTH:
             await emit({"type": "warning", "message": f"Mensaje truncado a {MAX_MESSAGE_LENGTH} caracteres"})
 
@@ -427,6 +433,7 @@ class StreamingChatRequest(BaseModel):
     toolMode: str = "prefetch"
     review: bool = False
     followups: bool = True
+    reasoning: str = "auto"
 
 
 @app.post("/api/chat-stream")

@@ -5,8 +5,8 @@ Endpoints administrativos para monitoreo y gestión del sistema.
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Request
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta, timezone
+from typing import Optional
+from datetime import datetime, timezone
 import psutil
 import os
 

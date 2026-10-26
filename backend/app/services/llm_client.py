@@ -8,6 +8,7 @@ OpenAI (Groq, OpenAI, Anthropic, Google, OpenRouter, Ollama, LM Studio).
 - Streaming real token a token.
 - Registra el uso de tokens cuando el proveedor lo informa.
 - Embeddings (/embeddings) y llamadas a herramientas (function calling) en streaming.
+- Esfuerzo de razonamiento (`reasoning_effort`) opcional; si el proveedor no lo acepta se omite.
 """
 
 from __future__ import annotations
@@ -39,6 +40,13 @@ class ToolsUnsupported(LLMError):
 EMBED_BATCH = 64
 
 OnReasoning = Optional[Callable[[str], Awaitable[None]]]
+
+# "none" apaga el razonamiento de los modelos que piensan (Ollama, OpenAI, Gemini, Groq)
+REASONING_LEVELS = ("none", "low", "medium", "high")
+# Tokens extra para pensar: en la mayoría de los proveedores el razonamiento cuenta dentro
+# de max_tokens y, sin margen, el modelo se queda sin presupuesto antes de responder.
+# None = el proveedor decide (puede pensar o no).
+THINKING_ALLOWANCE = {None: 4096, "low": 2048, "medium": 4096, "high": 8192}
 
 
 def _reasoning_of(delta: Any) -> str:
@@ -82,7 +90,16 @@ def _client_for(api_key: str, base_url: str) -> AsyncOpenAI:
     return client
 
 
-def _friendly_error(e: Exception) -> LLMError:
+def _friendly_error(e: Exception, provider: str = "", model: str = "", base_url: str = "") -> LLMError:
+    """Mensaje claro y accionable; para servidores locales dice dónde y cómo arrancarlos."""
+    local = provider == "local"
+    # APITimeoutError hereda de APIConnectionError: un timeout no es «servidor apagado»
+    if local and isinstance(e, openai.APIConnectionError) and not isinstance(e, openai.APITimeoutError):
+        return LLMError(f"No se pudo conectar con el servidor local en {base_url}. ¿Está abierto Ollama/LM Studio? "
+                        "Con Ollama: abre la app o ejecuta «ollama serve».")
+    if local and isinstance(e, openai.NotFoundError):
+        return LLMError(f"El modelo «{model}» no está instalado en el servidor local. "
+                        f"Descárgalo con «ollama pull {model}» o elige otro en el selector de modelo.")
     if isinstance(e, openai.AuthenticationError):
         return LLMError("API key inválida o revocada")
     if isinstance(e, openai.PermissionDeniedError):
@@ -92,7 +109,8 @@ def _friendly_error(e: Exception) -> LLMError:
     if isinstance(e, openai.RateLimitError):
         return LLMError("Límite de uso del proveedor alcanzado; intenta en unos segundos")
     if isinstance(e, openai.APITimeoutError):
-        return LLMError("El proveedor tardó demasiado en responder")
+        return LLMError("El proveedor tardó demasiado en responder"
+                        + ("; los modelos locales grandes pueden necesitar más memoria de la que tiene tu GPU" if local else ""))
     if isinstance(e, openai.APIConnectionError):
         return LLMError("No se pudo conectar con el proveedor de IA")
     if isinstance(e, openai.BadRequestError):
@@ -105,31 +123,55 @@ def _friendly_error(e: Exception) -> LLMError:
 class LLMClient:
     """Cliente ligado a la configuración de un usuario: {type, api_key, base_url}."""
 
-    def __init__(self, api_config: Dict[str, str], model: str):
+    def __init__(self, api_config: Dict[str, str], model: str, reasoning: Optional[str] = None):
         self.provider = api_config.get("type", "openai")
         self.model = model
+        # None = lo que decida el proveedor; si no, uno de REASONING_LEVELS
+        self.reasoning = reasoning if reasoning in REASONING_LEVELS else None
+        self._base_url = api_config["base_url"]
         self._client = _client_for(api_config["api_key"], api_config["base_url"])
         # Algunos proveedores (p.ej. Ollama viejo) rechazan stream_options
         self._supports_usage = True
+        # Los modelos sin razonamiento (p.ej. gpt-4o) rechazan reasoning_effort
+        self._supports_reasoning = True
+
+    def _kwargs(self, messages: List[Dict[str, Any]], max_tokens: int, temperature: float,
+                reasoning: Optional[str]) -> Dict[str, Any]:
+        effort = reasoning if reasoning in REASONING_LEVELS else self.reasoning
+        if effort != "none":
+            max_tokens += THINKING_ALLOWANCE[effort]
+        kwargs: Dict[str, Any] = dict(model=self.model, messages=messages, max_tokens=max_tokens,
+                                      temperature=temperature, stream=True)
+        if self._supports_usage:
+            kwargs["stream_options"] = {"include_usage": True}
+        if effort and self._supports_reasoning:
+            kwargs["reasoning_effort"] = effort
+        return kwargs
+
+    async def _create(self, kwargs: Dict[str, Any]) -> Any:
+        """Abre el stream; quita los parámetros opcionales que el proveedor rechace y reintenta."""
+        while True:
+            try:
+                return await self._client.chat.completions.create(**kwargs)
+            except openai.BadRequestError as e:
+                text = str(e).lower()
+                if kwargs.get("tools") and ("tool" in text or "function" in text):
+                    raise ToolsUnsupported("El modelo no soporta herramientas") from e
+                if "reasoning" in text and "reasoning_effort" in kwargs:
+                    self._supports_reasoning = False
+                    kwargs.pop("reasoning_effort")
+                elif "stream_options" in text and "stream_options" in kwargs:
+                    self._supports_usage = False
+                    kwargs.pop("stream_options")
+                else:
+                    raise
 
     async def stream(self, messages: List[Dict[str, str]], max_tokens: int = 2048,
                      temperature: float = 0.7, usage: Optional[Usage] = None,
-                     on_reasoning: OnReasoning = None) -> AsyncIterator[str]:
+                     on_reasoning: OnReasoning = None, reasoning: Optional[str] = None) -> AsyncIterator[str]:
         """Genera fragmentos de texto a medida que llegan. El razonamiento va a `on_reasoning`."""
-        kwargs = dict(model=self.model, messages=messages, max_tokens=max_tokens,
-                      temperature=temperature, stream=True)
-        if self._supports_usage:
-            kwargs["stream_options"] = {"include_usage": True}
         try:
-            try:
-                response = await self._client.chat.completions.create(**kwargs)
-            except openai.BadRequestError as e:
-                if "stream_options" not in str(e):
-                    raise
-                self._supports_usage = False
-                kwargs.pop("stream_options", None)
-                response = await self._client.chat.completions.create(**kwargs)
-
+            response = await self._create(self._kwargs(messages, max_tokens, temperature, reasoning))
             async for chunk in response:
                 if chunk.usage and usage is not None:
                     usage.add(Usage(chunk.usage.prompt_tokens or 0, chunk.usage.completion_tokens or 0))
@@ -146,11 +188,13 @@ class LLMClient:
                     yield delta.content
         except openai.OpenAIError as e:
             logger.info("Error LLM (%s/%s): %s", self.provider, self.model, e)
-            raise _friendly_error(e) from e
+            raise _friendly_error(e, self.provider, self.model, self._base_url) from e
 
     async def complete(self, messages: List[Dict[str, Any]], max_tokens: int = 1024,
                        temperature: float = 0.3, usage: Optional[Usage] = None) -> str:
-        parts = [p async for p in self.stream(messages, max_tokens, temperature, usage)]
+        """Respuesta completa sin razonar: son tareas cortas (JSON, OCR) y el razonamiento
+        consumiría el presupuesto de tokens dejando la respuesta vacía."""
+        parts = [p async for p in self.stream(messages, max_tokens, temperature, usage, reasoning="none")]
         return "".join(parts)
 
     async def stream_events(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict]] = None,
@@ -160,26 +204,12 @@ class LLMClient:
         Como `stream`, pero con herramientas. Emite ("text", str) a medida que llega y,
         al final, ("tool_calls", [{"id", "name", "arguments": dict}]) si el modelo pidió herramientas.
         """
-        kwargs: Dict[str, Any] = dict(model=self.model, messages=messages, max_tokens=max_tokens,
-                                      temperature=temperature, stream=True)
+        kwargs = self._kwargs(messages, max_tokens, temperature, None)
         if tools:
             kwargs["tools"] = tools
-        if self._supports_usage:
-            kwargs["stream_options"] = {"include_usage": True}
         calls: Dict[int, Dict[str, str]] = {}
         try:
-            try:
-                response = await self._client.chat.completions.create(**kwargs)
-            except openai.BadRequestError as e:
-                text = str(e).lower()
-                if tools and ("tool" in text or "function" in text):
-                    raise ToolsUnsupported("El modelo no soporta herramientas") from e
-                if "stream_options" not in text:
-                    raise
-                self._supports_usage = False
-                kwargs.pop("stream_options", None)
-                response = await self._client.chat.completions.create(**kwargs)
-
+            response = await self._create(kwargs)
             async for chunk in response:
                 if chunk.usage and usage is not None:
                     usage.add(Usage(chunk.usage.prompt_tokens or 0, chunk.usage.completion_tokens or 0))
@@ -205,7 +235,7 @@ class LLMClient:
             raise
         except openai.OpenAIError as e:
             logger.info("Error LLM (%s/%s): %s", self.provider, self.model, e)
-            raise _friendly_error(e) from e
+            raise _friendly_error(e, self.provider, self.model, self._base_url) from e
 
         if calls:
             parsed = []
@@ -228,7 +258,7 @@ class LLMClient:
                 vectors.extend(item.embedding for item in sorted(response.data, key=lambda d: d.index))
         except openai.OpenAIError as e:
             logger.info("Error embeddings (%s/%s): %s", self.provider, model, e)
-            raise _friendly_error(e) from e
+            raise _friendly_error(e, self.provider, self.model, self._base_url) from e
         if len(vectors) != len(texts):
             raise LLMError("El proveedor devolvió una cantidad inesperada de embeddings")
         return vectors
