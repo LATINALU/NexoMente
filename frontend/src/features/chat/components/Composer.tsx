@@ -55,6 +55,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const setRunOptions = useSettings((s) => s.setRunOptions);
   const selectedAgents = useWorkspace((s) => s.selectedAgents);
   const model = useWorkspace((s) => s.model);
+  const providerType = useWorkspace((s) => s.apiConfig.type);
 
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
@@ -71,8 +72,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     () => analyzeQuery({
       text: debounced, attachments: attachments.length, webReady, webOn: options.webSearch, reviewOn: options.review,
       selectedAgents: selectedAgents.length, hasHistory: path.length > 0,
+      localModel: providerType === "local", reasoning: options.reasoning,
     }).filter((t) => !dismissed.has(t.id)),
-    [debounced, attachments.length, webReady, options.webSearch, options.review, selectedAgents.length, path.length, dismissed],
+    [debounced, attachments.length, webReady, options.webSearch, options.review, selectedAgents.length, path.length, dismissed,
+     providerType, options.reasoning],
   );
   const estimate = useMemo(() => {
     if (!debounced.trim()) return null;
@@ -98,6 +101,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       case "attach": fileRef.current?.click(); break;
       case "suggest-team": onSuggest(input); break;
       case "enable-review": setRunOptions({ review: true }); break;
+      case "reasoning-off": setRunOptions({ reasoning: "none" }); break;
       case "add-context":
         setInput(contextTemplate(input));
         setDismissed((d) => new Set(d).add("context"));

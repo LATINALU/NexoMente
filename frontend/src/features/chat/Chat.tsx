@@ -6,7 +6,7 @@
  */
 
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Brain, ChevronLeft, Download, Layers, Link2, Menu, Save, Wifi, WifiOff, X } from "lucide-react";
+import { AlertCircle, ArrowDown, Brain, ChevronLeft, Download, Layers, LayoutList, Link2, Menu, Save, Wifi, WifiOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { siblingsOf } from "@/lib/chat";
 import { useSettings } from "@/stores/settings";
@@ -17,6 +17,7 @@ import { ConversationHistory } from "@/components/ConversationHistory";
 import { TaskSelector } from "@/components/TaskSelector";
 import { ShareDialog } from "@/components/ShareDialog";
 import { useChatSession } from "./useChatSession";
+import { useRunTitle } from "./useRunTitle";
 import { onChatCommand } from "./commands";
 import { Composer, ComposerHandle } from "./components/Composer";
 import { EmptyState, ReadinessStep } from "./components/EmptyState";
@@ -51,6 +52,12 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
 
   const [shareOpen, setShareOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  const [showTasks, setShowTasks] = useState(true);
+  // Con poco ancho los paneles laterales dejan el chat demasiado angosto: arrancan cerrados
+  useEffect(() => {
+    if (window.innerWidth < 1536) setShowTasks(false);
+    if (window.innerWidth < 1280) setShowHistory(false);
+  }, []);
   const [showMobilePanel, setShowMobilePanel] = useState(false);
   const { mobile, tablet } = useViewport();
   const composerRef = useRef<ComposerHandle>(null);
@@ -59,9 +66,32 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
 
   useEffect(() => onConnectionChange?.(isConnected), [isConnected, onConnectionChange]);
 
+  useRunTitle(processing);
+
+  // Seguir el texto nuevo solo si el usuario está abajo: si subió a leer, no lo arrastramos
+  const stickToBottom = useRef(true);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    stickToBottom.current = near;
+    setAwayFromBottom(!near);
+  };
+  const scrollToBottom = (smooth = false) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    setAwayFromBottom(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  };
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [path.length, run]);
+    if (stickToBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [run]);
+
+  // Pregunta nueva o conversación abierta: siempre al final
+  useEffect(() => scrollToBottom(), [path.length, session.conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hermanos por turno: se recalcula solo cuando cambia el árbol, no con cada token
   const siblings = useMemo(() => Object.fromEntries(path.map((t) => [t.id, siblingsOf(tree, t)])), [tree, path]);
@@ -147,16 +177,20 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-primary/20 border border-primary/40"><Layers className="h-5 w-5 text-primary" /></div>
                 <span className="font-bold text-lg text-primary">Agentes</span>
-                <Badge variant="outline" className="text-xs">{selectedAgents.length} seleccionados</Badge>
+                <Badge variant="outline" className="text-xs whitespace-nowrap">{selectedAgents.length} seleccionados</Badge>
                 {connectionBadge}
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <Button variant="ghost" size="sm" onClick={session.newConversation} className="text-xs font-semibold">Nuevo</Button>
                 <Button variant="ghost" size="sm" onClick={session.exportMarkdown} disabled={!path.length} title="Exportar a Markdown" className="text-xs gap-1">
-                  <Download className="h-3.5 w-3.5" />Exportar
+                  <Download className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Exportar</span>
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} disabled={!path.length || processing} title="Compartir por link" className="text-xs gap-1">
-                  <Link2 className="h-3.5 w-3.5" />Compartir
+                  <Link2 className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Compartir</span>
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowTasks(!showTasks)} title={showTasks ? "Ocultar equipos y tareas" : "Mostrar equipos y tareas"}
+                  className={cn("p-0 h-8 w-8", showTasks && "bg-primary/10")}>
+                  <LayoutList className="h-4 w-4" />
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setShowHistory(!showHistory)} title={showHistory ? "Ocultar historial" : "Mostrar historial"}
                   className={cn("p-0 h-8 w-8", showHistory && "bg-primary/10")}>
@@ -168,7 +202,7 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
 
           <TeamBar />
 
-          <div className="flex-1 overflow-y-auto p-4" ref={scrollRef}>
+          <div className="flex-1 overflow-y-auto p-4" ref={scrollRef} onScroll={onScroll}>
             <div className="max-w-5xl mx-auto">
               {session.error && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 mb-4 text-sm">
@@ -203,6 +237,15 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
             </div>
           </div>
 
+          {awayFromBottom && path.length > 0 && (
+            <div className="relative">
+              <button onClick={() => scrollToBottom(true)}
+                className="absolute -top-14 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-card/95 px-3 py-1.5 text-xs font-semibold text-primary shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 hover:bg-primary/10">
+                <ArrowDown className="h-3.5 w-3.5" />{processing ? "Seguir la respuesta" : "Ir al final"}
+              </button>
+            </div>
+          )}
+
           <Composer
             ref={composerRef}
             path={path}
@@ -226,7 +269,7 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
         <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} path={path}
           title={path[0]?.user.content.slice(0, 80) || "Conversación de Nexo"} />
 
-        {!mobile && <TaskSelector onSelect={setAgents} className="h-full shrink-0" header={sidePanelHeader} />}
+        {!mobile && showTasks && <TaskSelector onSelect={setAgents} className="h-full shrink-0" header={sidePanelHeader} />}
 
         {!mobile && showHistory && (
           <div className={cn("border-l border-primary/10 h-full flex-shrink-0 bg-card overflow-hidden", tablet ? "w-60" : "w-72")}>

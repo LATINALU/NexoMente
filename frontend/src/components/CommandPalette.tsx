@@ -2,15 +2,16 @@
 
 /**
  * Paleta de comandos (Ctrl/⌘+K) y atajos globales de Nexo.
- * Busca acciones, agentes (para agregarlos/quitarlos) y equipos guardados.
+ * Busca acciones, agentes (para agregarlos/quitarlos), equipos guardados y temas.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Command, CornerDownLeft, Keyboard, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Agent, getAgents } from "@/lib/api";
+import { useWorkspace } from "@/stores/workspace";
 import { Team, listTeams } from "@/lib/teams";
 import { ChatCommand, sendChatCommand } from "@/features/chat/commands";
+import { THEMES, applyTheme, saveTheme } from "@/lib/theme";
 
 interface PaletteItem {
   id: string;
@@ -56,7 +57,7 @@ export function CommandPalette({ selectedAgents, onToggleAgent, onApplyTeam, onO
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const agents = useWorkspace((s) => s.catalog);
   const [teams, setTeams] = useState<Team[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -97,9 +98,9 @@ export function CommandPalette({ selectedAgents, onToggleAgent, onApplyTeam, onO
   useEffect(() => {
     if (!open) return;
     setTimeout(() => inputRef.current?.focus(), 0);
-    if (!agents.length) getAgents().then((r) => setAgents(r.agents)).catch(() => {});
+    useWorkspace.getState().loadCatalog(); // no-op si ya está cargado
     listTeams().then(setTeams).catch(() => {});
-  }, [open, agents.length]);
+  }, [open]);
 
   const items = useMemo<PaletteItem[]>(() => {
     const run = (fn: () => void) => () => {
@@ -129,14 +130,19 @@ export function CommandPalette({ selectedAgents, onToggleAgent, onApplyTeam, onO
         run: () => onToggleAgent(a.id), // no cierra: permite elegir varios
       };
     });
-    return [...actions, ...teamItems, ...agentItems];
+    const themeItems: PaletteItem[] = THEMES.map((t) => ({
+      id: `theme-${t.id}`, group: "Temas", icon: t.scheme === "dark" ? "🌙" : "☀️", label: `Tema: ${t.name}`,
+      hint: t.description, keywords: `tema theme apariencia color ${t.scheme === "dark" ? "oscuro" : "claro"}`,
+      run: run(() => { applyTheme(t.id); saveTheme(t.id); }),
+    }));
+    return [...actions, ...teamItems, ...themeItems, ...agentItems];
   }, [agents, teams, selectedAgents, close, onApplyTeam, onClearAgents, onOpenSettings, onToggleAgent]);
 
   const filtered = useMemo(() => {
     const terms = normalize(query).split(/\s+/).filter(Boolean);
     const matches = terms.length
       ? items.filter((i) => terms.every((t) => normalize(`${i.label} ${i.hint || ""} ${i.keywords || ""}`).includes(t)))
-      : items.filter((i) => i.group !== "Agentes");
+      : items.filter((i) => i.group !== "Agentes" && i.group !== "Temas"); // aparecen al buscar
     return matches.slice(0, 60);
   }, [items, query]);
 

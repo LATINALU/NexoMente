@@ -41,7 +41,7 @@ export default function HomePage() {
       <AppHeader wsConnected={wsConnected} onOpenSettings={() => setSettingsOpen(true)} />
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-80 border-r border-primary/20 flex-shrink-0 overflow-hidden">
+        <div className="border-r border-primary/20 flex-shrink-0 overflow-hidden">
           <CategorySidebar
             selectedAgents={selectedAgents}
             onAgentToggle={toggleAgent}

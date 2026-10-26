@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings2 } from "lucide-react";
-import type { RunMode, RunOptions, ToolMode } from "@/lib/chat";
+import type { ReasoningLevel, RunMode, RunOptions, ToolMode } from "@/lib/chat";
 import { Button } from "@/components/ui/button";
 
 interface Choice<T extends string> {
@@ -19,6 +19,12 @@ const TOOL_MODES: Choice<ToolMode>[] = [
   { value: "prefetch", title: "Búsqueda previa", help: "Se busca una vez y todos reciben las mismas fuentes. Funciona con cualquier modelo." },
   { value: "native", title: "Herramientas nativas", help: "Cada agente decide qué y cuándo buscar. Requiere un modelo con function calling." },
 ];
+const REASONING: Choice<ReasoningLevel>[] = [
+  { value: "auto", title: "Automático", help: "Lo que haga el modelo por defecto." },
+  { value: "none", title: "Apagado", help: "Responde directo. Mucho más rápido en modelos locales." },
+  { value: "low", title: "Bajo", help: "Piensa un poco antes de responder." },
+  { value: "high", title: "Alto", help: "Piensa a fondo: mejor en problemas difíciles, más lento y caro." },
+];
 const TOGGLES: Array<{ key: "synthesize" | "review" | "followups"; title: string; help: string }> = [
   { key: "synthesize", title: "Respuesta integrada", help: "Un Coordinador une los aportes en una sola respuesta." },
   { key: "review", title: "Revisión crítica", help: "Un Revisor busca errores y vacíos antes de integrar. Usa más tokens." },
@@ -27,6 +33,17 @@ const TOGGLES: Array<{ key: "synthesize" | "review" | "followups"; title: string
 
 export function RunOptionsMenu({ options, onChange }: { options: RunOptions; onChange: (patch: Partial<RunOptions>) => void }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation(); // que Esc cierre el menú y no detenga una consulta
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open]);
   const radio = <T extends string>(title: string, choices: Choice<T>[], current: T, set: (v: T) => void) => (
     <div>
       <div className="font-semibold mb-1">{title}</div>
@@ -51,6 +68,9 @@ export function RunOptionsMenu({ options, onChange }: { options: RunOptions; onC
             {radio("Modo de trabajo", MODES, options.mode, (mode) => onChange({ mode }))}
             <div className="border-t border-border pt-2">
               {radio("Fuentes (documentos y web)", TOOL_MODES, options.toolMode, (toolMode) => onChange({ toolMode }))}
+            </div>
+            <div className="border-t border-border pt-2">
+              {radio("Razonamiento del modelo", REASONING, options.reasoning, (reasoning) => onChange({ reasoning }))}
             </div>
             <div className="border-t border-border pt-2 space-y-1">
               {TOGGLES.map((t) => (

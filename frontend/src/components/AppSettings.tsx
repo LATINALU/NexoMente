@@ -10,8 +10,6 @@ import { DocumentSettings } from "./DocumentSettings";
 import { CostSettings } from "./CostSettings";
 import {
     Key,
-    Plus,
-    Trash2,
     Check,
     X,
     Eye,
@@ -29,9 +27,7 @@ import {
     Languages,
     Monitor,
     Info,
-    Cpu,
     BookOpen,
-    Users,
     ExternalLink,
     Globe,
     FileText,
@@ -120,9 +116,10 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
         };
 
         const savePreference = localStorage.getItem("nexo-save-apis");
-        setSaveToStorage(savePreference === "true");
+        // Por defecto se recuerdan (cifrados); solo se olvidan si el usuario lo desactivó
+        setSaveToStorage(savePreference !== "false");
         loadSavedProviders();
-    }, []);
+    }, [onProvidersChange]); // estable (acción del store): corre una sola vez
 
     const saveProviders = (newProviders: ApiProvider[]) => {
         setProviders(newProviders);
@@ -135,8 +132,11 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
             try {
                 await SecureStorage.setItem("api-providers", providers);
             } catch (e) {
-                localStorage.setItem("nexo-api-providers", JSON.stringify(providers));
+                // Nunca en texto plano: si no se puede cifrar, no se guarda
+                console.error("No se pudieron guardar los proveedores:", e);
             }
+        } else {
+            SecureStorage.removeItem("api-providers");
         }
         setOriginalProviders(providers);
         onProvidersChange(providers);
@@ -258,7 +258,7 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-border bg-muted/10 px-4 overflow-x-auto [&>button]:shrink-0 [&>button]:whitespace-nowrap">
+                <div className="flex flex-wrap border-b border-border bg-muted/10 px-2 [&>button]:whitespace-nowrap">
                     <TabButton active={activeTab === "apis"} onClick={() => setActiveTab("apis")} icon={<Key size={18} />} label="APIs & Modelos" />
                     <TabButton active={activeTab === "web"} onClick={() => setActiveTab("web")} icon={<Globe size={18} />} label="Búsqueda web" />
                     <TabButton active={activeTab === "docs"} onClick={() => setActiveTab("docs")} icon={<FileText size={18} />} label="Documentos" />
@@ -297,7 +297,7 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                                         <div key={provider.id} className="border border-border rounded-xl overflow-hidden bg-muted/20">
                                             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setExpandedProvider(expandedProvider === provider.id ? null : provider.id)}>
                                                 <div className="flex items-center gap-3">
-                                                    <div className={cn("w-2.5 h-2.5 rounded-full shadow-[0_0_8px]", provider.isActive && provider.apiKey ? "bg-green-500 shadow-green-500/50" : "bg-muted-foreground")} />
+                                                    <div className={cn("w-2.5 h-2.5 rounded-full shadow-[0_0_8px]", provider.isActive && (provider.apiKey || provider.type === "local") ? "bg-green-500 shadow-green-500/50" : "bg-muted-foreground")} />
                                                     <span className="font-semibold">{provider.name}</span>
                                                 </div>
                                                 <ChevronDown className={cn("transition-transform duration-300", expandedProvider === provider.id && "rotate-180")} />
@@ -472,7 +472,10 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                                     <Shield size={18} className="text-primary" /> Privacidad
                                 </h3>
                                 <div className="flex items-center justify-between p-4 bg-muted/20 border border-border rounded-2xl">
-                                    <span className="text-sm font-medium">Encriptar datos en el navegador</span>
+                                    <span className="text-sm font-medium">
+                                        Recordar proveedores y API keys en este navegador
+                                        <span className="block text-xs text-muted-foreground font-normal">Se guardan cifrados. Si lo desactivas, se borran al guardar y tendrás que cargarlos en cada visita.</span>
+                                    </span>
                                     <button
                                         onClick={() => { setSaveToStorage(!saveToStorage); localStorage.setItem("nexo-save-apis", String(!saveToStorage)); }}
                                         className={cn("w-12 h-6 rounded-full transition-all relative", saveToStorage ? "bg-primary" : "bg-muted-foreground/30")}
@@ -485,234 +488,59 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                     )}
 
                     {activeTab === "guide" && (
-                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
-                            {/* Sección 1: Obtener API Key */}
-                            <section className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-2xl border border-blue-200 dark:border-blue-800">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
-                                        <Key size={20} className="text-white" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-blue-900 dark:text-blue-100">1. Obtener tu API Key GRATIS</h3>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-blue-200 dark:border-blue-700">
-                                        <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-3 flex items-center gap-2">
-                                            <Zap size={16} className="text-yellow-500" />
-                                            Groq - La Opción GRATIS Recomendada
-                                        </h4>
-                                        <ol className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-300 flex-shrink-0">1</span>
-                                                <span>Visita <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">console.groq.com/keys</a></span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-300 flex-shrink-0">2</span>
-                                                <span>Regístrate con tu email (es gratis)</span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-300 flex-shrink-0">3</span>
-                                                <span>Crea una nueva API Key</span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-300 flex-shrink-0">4</span>
-                                                <span>Copia la key y pégala aquí abajo</span>
-                                            </li>
+                        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2">
+                            <GuideStep n={1} title="Conecta un modelo de IA">
+                                <p className="mb-3">Nexo usa <strong>tu propio</strong> proveedor: elige uno en <strong>APIs &amp; Modelos</strong>, pulsa <strong>Sincronizar Modelos</strong> y luego <strong>Guardar Configuración</strong>.</p>
+                                <div className="grid sm:grid-cols-2 gap-3">
+                                    <div className="rounded-xl border border-border bg-background/60 p-3">
+                                        <div className="font-semibold text-foreground mb-1">🖥️ Local y gratis (Ollama)</div>
+                                        <ol className="list-decimal pl-4 space-y-1">
+                                            <li>Instala <a className="text-primary hover:underline" href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Ollama</a>.</li>
+                                            <li>Descarga un modelo que entre en tu GPU, p. ej. <code className="text-primary">ollama pull qwen3.5:9b</code>.</li>
+                                            <li>Elige <strong>Local (Ollama/LM Studio)</strong> y sincroniza.</li>
                                         </ol>
-                                        <div className="mt-3 p-2 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                                            <p className="text-xs text-green-700 dark:text-green-300 font-medium">
-                                                💰 <strong>Gratis:</strong> $0.50 USD en créditos mensuales + uso libre durante beta
-                                            </p>
-                                        </div>
+                                        <p className="mt-2 text-xs">Privado: nada sale de tu PC (salvo la búsqueda web, si la activas).</p>
                                     </div>
-                                </div>
-                            </section>
-
-                            {/* Sección 2: Configurar la App */}
-                            <section className="p-6 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 rounded-2xl border border-green-200 dark:border-green-800">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
-                                        <Settings size={20} className="text-white" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-green-900 dark:text-green-100">2. Configurar Nexo Platform</h3>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-green-200 dark:border-green-700">
-                                        <ol className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">1</span>
-                                                <span>Ve a <strong>Ajustes</strong> (ícono ⚙️)</span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">2</span>
-                                                <span>En la pestaña <strong>“APIs & Modelos”</strong></span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">3</span>
-                                                <span>Selecciona <strong>Groq</strong> y haz clic en <strong>“Añadir Proveedor”</strong></span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">4</span>
-                                                <span>Pega tu API Key en el campo correspondiente</span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">5</span>
-                                                <span>Click en <strong>“Sincronizar Modelos”</strong></span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">6</span>
-                                                <span>Selecciona <strong>“llama-3.3-70b-versatile”</strong> (modelo gratuito)</span>
-                                            </li>
-                                            <li className="flex gap-2">
-                                                <span className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center text-xs font-bold text-green-600 dark:text-green-300 flex-shrink-0">7</span>
-                                                <span>Guarda la configuración</span>
-                                            </li>
-                                        </ol>
-                                    </div>
-                                </div>
-                            </section>
-
-                            {/* Sección 3: Usar la App */}
-                            <section className="p-6 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 rounded-2xl border border-purple-200 dark:border-purple-800">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
-                                        <Cpu size={20} className="text-white" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-purple-900 dark:text-purple-100">3. Usar Nexo Platform</h3>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-purple-200 dark:border-purple-700">
-                                        <div className="grid md:grid-cols-2 gap-4">
-                                            <div>
-                                                <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3 flex items-center gap-2">
-                                                    <Monitor size={16} />
-                                                    Versión PC/Desktop
-                                                </h4>
-                                                <ol className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">1</span>
-                                                        <span>Selecciona agentes en el panel izquierdo</span>
-                                                    </li>
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">2</span>
-                                                        <span>Escribe tu pregunta en el chat</span>
-                                                    </li>
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">3</span>
-                                                        <span>Los agentes procesan tu solicitud</span>
-                                                    </li>
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">4</span>
-                                                        <span>Recibe respuestas multi-agente</span>
-                                                    </li>
-                                                </ol>
-                                            </div>
-
-                                            <div>
-                                                <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3 flex items-center gap-2">
-                                                    <Users size={16} />
-                                                    Versión Móvil
-                                                </h4>
-                                                <ol className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">1</span>
-                                                        <span>Botón <strong>👥 Agentes</strong> para seleccionar</span>
-                                                    </li>
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">2</span>
-                                                        <span>Botón <strong>✅ Tareas</strong> para plantillas</span>
-                                                    </li>
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">3</span>
-                                                        <span>Escribe en el chat principal</span>
-                                                    </li>
-                                                    <li className="flex gap-2">
-                                                        <span className="w-6 h-6 bg-purple-100 dark:bg-purple-900 rounded-full flex items-center justify-center text-xs font-bold text-purple-600 dark:text-purple-300 flex-shrink-0">4</span>
-                                                        <span>Memoria se guarda automáticamente</span>
-                                                    </li>
-                                                </ol>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                                            <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
-                                                💡 <strong>Tip:</strong> Usa múltiples agentes para mejores resultados (ej: reasoning + synthesis + coding)
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            {/* Sección 4: Características */}
-                            <section className="p-6 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 rounded-2xl border border-orange-200 dark:border-orange-800">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center">
-                                        <Zap size={20} className="text-white" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-orange-900 dark:text-orange-100">Características de Nexo Platform</h3>
-                                </div>
-
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                                        <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-2">✅ Gratis & Privado</h4>
-                                        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                                            <li>• Sin registro requerido</li>
-                                            <li>• Datos 100% locales</li>
-                                            <li>• API Key gratuita disponible</li>
-                                            <li>• Sin servidores externos</li>
+                                    <div className="rounded-xl border border-border bg-background/60 p-3">
+                                        <div className="font-semibold text-foreground mb-1">☁️ En la nube (con API key)</div>
+                                        <ul className="space-y-1">
+                                            {CLOUD_KEYS.map((c) => (
+                                                <li key={c.name}><a className="text-primary hover:underline inline-flex items-center gap-1" href={c.url} target="_blank" rel="noopener noreferrer">{c.name}<ExternalLink size={11} /></a> <span className="text-xs">— {c.note}</span></li>
+                                            ))}
                                         </ul>
-                                    </div>
-
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                                        <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-2">🤖 Multi-Agente</h4>
-                                        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                                            <li>• 30 agentes especializados</li>
-                                            <li>• Procesamiento paralelo</li>
-                                            <li>• Respuestas integradas</li>
-                                            <li>• Niveles 1-5 de experiencia</li>
-                                        </ul>
-                                    </div>
-
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                                        <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-2">📱 Multi-Plataforma</h4>
-                                        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                                            <li>• Desktop y móvil</li>
-                                            <li>• Diseño responsivo</li>
-                                            <li>• Temas claro/oscuro</li>
-                                            <li>• Idiomas múltiples</li>
-                                        </ul>
-                                    </div>
-
-                                    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                                        <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-2">🧠 Memoria Inteligente</h4>
-                                        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                                            <li>• Auto-guardado cada 2s</li>
-                                            <li>• Persistencia local</li>
-                                            <li>• Historial completo</li>
-                                            <li>• Conversaciones organizadas</li>
-                                        </ul>
+                                        <p className="mt-2 text-xs">Pega la key en el proveedor. Se guarda cifrada en este navegador.</p>
                                     </div>
                                 </div>
-                            </section>
+                            </GuideStep>
 
-                            {/* Botón directo a Groq */}
-                            <div className="text-center">
-                                <a
-                                    href="https://console.groq.com/keys"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-500/25"
-                                >
-                                    <Zap size={20} />
-                                    Obtener API Key GRATIS en Groq
-                                    <ExternalLink size={16} />
-                                </a>
-                                <p className="text-xs text-muted-foreground mt-2">
-                                    Abre en nueva ventana → console.groq.com/keys
-                                </p>
-                            </div>
+                            <GuideStep n={2} title="Elige el modelo y los agentes">
+                                <ul className="space-y-1.5">
+                                    <li>El <strong>selector de modelo</strong> está arriba, en el centro; Nexo recuerda tu elección.</li>
+                                    <li>Busca agentes en la barra izquierda, abre una <strong>categoría</strong> o usa una <strong>tarea predefinida</strong>.</li>
+                                    <li>¿No sabes cuáles? Describe la tarea y pulsa <strong>🪄 Sugerir</strong> junto al cuadro de texto.</li>
+                                    <li>Con 2 a 4 agentes suele bastar; más agentes = más tiempo y tokens.</li>
+                                </ul>
+                            </GuideStep>
+
+                            <GuideStep n={3} title="Ajusta cómo trabajan (botón ⚙ del chat)">
+                                <ul className="space-y-1.5">
+                                    <li><strong>Modo:</strong> paralelo (rápido) o secuencial (cada agente lee a los anteriores).</li>
+                                    <li><strong>Razonamiento del modelo:</strong> <em>Apagado</em> es mucho más rápido en modelos locales; <em>Alto</em> para problemas difíciles.</li>
+                                    <li><strong>Revisión crítica:</strong> un revisor busca errores antes de la respuesta integrada.</li>
+                                    <li><strong>Respuesta integrada</strong> y <strong>seguimientos</strong> sugeridos al final.</li>
+                                </ul>
+                            </GuideStep>
+
+                            <GuideStep n={4} title="Más funciones">
+                                <ul className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                                    <li>📎 Adjunta PDF, DOCX, imágenes… y los agentes los citan [D1].</li>
+                                    <li>🌐 Búsqueda web con fuentes [W1] (configúrala en su pestaña).</li>
+                                    <li>🧮 Calculadora de costos de Mercado Libre con agentes ML.</li>
+                                    <li>🌿 Edita una pregunta para crear una rama y compara versiones.</li>
+                                    <li>📤 Exporta a Markdown o comparte un link de solo lectura.</li>
+                                    <li>⌨️ <kbd className="px-1 rounded border border-border">Ctrl</kbd>+<kbd className="px-1 rounded border border-border">K</kbd> abre la paleta de comandos.</li>
+                                </ul>
+                            </GuideStep>
                         </div>
                     )}
 
@@ -720,7 +548,7 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                         <div className="space-y-6 text-center py-8 animate-in zoom-in-95 duration-300">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src="/favicon.svg" alt="" className="w-24 h-24 rounded-3xl mx-auto mb-4 shadow-xl shadow-primary/30" />
-                            <h2 className="text-3xl font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+                            <h2 className="text-3xl font-black bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                                 Nexo
                             </h2>
                             <p className="text-muted-foreground max-w-md mx-auto">
@@ -751,7 +579,7 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                 {/* Footer */}
                 <div className="p-6 border-t border-border bg-muted/30 flex items-center justify-between">
                     <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                        <Lock size={12} className="text-primary" /> Datos encriptados localmente
+                        <Lock size={12} className="text-primary" /> {saveToStorage ? "Se guardan cifrados en este navegador" : "No se guardan: se pierden al recargar"}
                     </div>
                     <div className="flex gap-3">
                         <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold hover:bg-muted transition-colors">Cerrar</button>
@@ -770,12 +598,31 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
     );
 }
 
+const CLOUD_KEYS = [
+    { name: "Groq", url: "https://console.groq.com/keys", note: "muy rápido, con plan gratuito" },
+    { name: "OpenAI", url: "https://platform.openai.com/api-keys", note: "modelos GPT" },
+    { name: "Anthropic", url: "https://console.anthropic.com/settings/keys", note: "modelos Claude" },
+    { name: "Google AI", url: "https://aistudio.google.com/apikey", note: "modelos Gemini" },
+];
+
+function GuideStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+    return (
+        <section className="rounded-2xl border border-border bg-card/60 p-5">
+            <h3 className="flex items-center gap-3 text-base font-bold text-foreground mb-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-black text-primary-foreground">{n}</span>
+                {title}
+            </h3>
+            <div className="text-sm text-muted-foreground">{children}</div>
+        </section>
+    );
+}
+
 function TabButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: any, label: string }) {
     return (
         <button
             onClick={onClick}
             className={cn(
-                "flex items-center gap-2 px-6 py-4 text-sm font-bold transition-all relative border-b-2",
+                "flex items-center gap-2 px-4 py-3.5 text-sm font-bold transition-all relative border-b-2",
                 active ? "text-primary border-primary bg-primary/5" : "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/30"
             )}
         >

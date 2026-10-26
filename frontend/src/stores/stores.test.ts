@@ -41,6 +41,20 @@ describe("workspace store", () => {
   });
 });
 
+describe("modelo recordado", () => {
+  it("restaura el último modelo elegido al recargar, si sigue habilitado", async () => {
+    const { useWorkspace } = await import("./workspace");
+    const local = { id: "local", name: "Ollama", type: "local", apiKey: "", models: ["gemma", "qwen"],
+                    enabledModels: ["gemma", "qwen"], isActive: true } as any;
+    useWorkspace.getState().selectModel(local, "qwen");
+    useWorkspace.setState({ model: "otro", apiConfig: { ...local, id: "x" } }); // simula una recarga
+    useWorkspace.getState().setProviders([local]);
+    expect(useWorkspace.getState().model).toBe("qwen");
+    useWorkspace.getState().setProviders([{ ...local, enabledModels: ["gemma"] }]);
+    expect(useWorkspace.getState().model).toBe("gemma"); // ya no está habilitado
+  });
+});
+
 describe("settings store", () => {
   it("migra claves viejas en la primera hidratación y luego persiste", async () => {
     localStorage.setItem("nexo_run_options", JSON.stringify({ mode: "sequential", review: true }));

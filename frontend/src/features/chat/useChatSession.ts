@@ -13,7 +13,7 @@ import { getCurrentLanguage } from "@/lib/i18n";
 import { hasSession, saveServerConversation, suggestAgents } from "@/lib/api";
 import {
   ChatMessage, ConversationTree, Turn, activePath, addTurn, buildHistory, conversationToMarkdown, downloadText,
-  emptyTree, latestLeaf, messagesToTree, newTurnId, siblingsOf, slugify, streamViaSSE, treeToMessages, updateTurn,
+  emptyTree, latestLeaf, messagesToTree, newTurnId, reviveTree, siblingsOf, slugify, streamViaSSE, treeToMessages, updateTurn,
 } from "@/lib/chat";
 import { DocumentRef, MAX_DOCUMENTS_PER_CHAT, deleteDocument, uploadDocument } from "@/lib/documents";
 import { resolveChoice } from "@/lib/docSettings";
@@ -72,12 +72,14 @@ export function useChatSession() {
 
   // --------------------------------------------------------------- persistencia
   const openConversation = useCallback(async (conversation: Conversation) => {
-    let loaded = conversation.tree ?? messagesToTree(conversation.messages || []);
+    let loaded = conversation.tree ? reviveTree(conversation.tree) : messagesToTree(conversation.messages || []);
     if (!Object.keys(loaded.turns).length && hasSession()) {
       loaded = messagesToTree(await ConversationStorage.getServerConversationMessages(conversation.id));
     }
     setConversationId(conversation.id);
     setTree(loaded);
+    // El equipo de la conversación vuelve con ella, para poder seguir preguntando
+    if (conversation.agents?.length) useWorkspace.getState().setAgents(conversation.agents);
     setAttachments(conversation.documents || []);
     localStorage.setItem("nexo_current_conversation", conversation.id);
   }, []);
@@ -235,6 +237,7 @@ export function useChatSession() {
       review: options.review,
       followups: options.followups,
       toolMode: options.toolMode,
+      reasoning: options.reasoning,
       history,
       agentInstructions: instructions,
       documents: attachments.map((d) => d.id),

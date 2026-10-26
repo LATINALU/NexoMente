@@ -6,7 +6,7 @@
  * El HTML crudo del modelo no se interpreta (react-markdown lo escapa).
  */
 
-import { memo, useEffect, useId, useState } from "react";
+import { Children, Fragment, ReactNode, memo, useEffect, useId, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
@@ -86,6 +86,19 @@ export function CodeBlock({ language, code, note }: { language?: string; code: s
   );
 }
 
+// Los modelos usan <br> para saltos dentro de celdas de tabla. El HTML crudo no se
+// interpreta (seguridad), así que solo ese caso se convierte en un salto real.
+const BR = /<br\s*\/?>/gi;
+
+function withLineBreaks(children: ReactNode): ReactNode {
+  return Children.map(children, (child) => {
+    if (typeof child !== "string" || !BR.test(child)) return child;
+    BR.lastIndex = 0;
+    const parts = child.split(BR);
+    return parts.map((part, i) => <Fragment key={i}>{part}{i < parts.length - 1 && <br />}</Fragment>);
+  });
+}
+
 function MarkdownImpl({ children, className }: { children: string; className?: string }) {
   return (
     <div className={cn("prose prose-sm dark:prose-invert max-w-none prose-table:text-xs prose-th:px-2 prose-td:px-2", className)}>
@@ -102,6 +115,18 @@ function MarkdownImpl({ children, className }: { children: string; className?: s
           },
           pre({ children: inner }) {
             return <>{inner}</>;
+          },
+          td({ children: inner, node: _node, ...props }) {
+            return <td {...props}>{withLineBreaks(inner)}</td>;
+          },
+          th({ children: inner, node: _node, ...props }) {
+            return <th {...props}>{withLineBreaks(inner)}</th>;
+          },
+          li({ children: inner, node: _node, ...props }) {
+            return <li {...props}>{withLineBreaks(inner)}</li>;
+          },
+          p({ children: inner, node: _node, ...props }) {
+            return <p {...props}>{withLineBreaks(inner)}</p>;
           },
           a({ href, children: label }) {
             const safe = href && /^(https?:|mailto:)/i.test(href) ? href : undefined;

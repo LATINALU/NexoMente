@@ -72,34 +72,30 @@ export const encrypt = async (data: string, password: string): Promise<string> =
 // Desencriptar datos
 export const decrypt = async (encryptedData: string, password: string): Promise<string> => {
   try {
-    const key = await deriveKey(password);
-    
-    // Convertir desde base64
-    const binaryString = atob(encryptedData);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-
-    // Extraer IV y datos encriptados
-    const iv = bytes.slice(0, 12);
-    const encrypted = bytes.slice(12);
-
-    const decrypted = await crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv: new Uint8Array(iv)
-      },
-      key,
-      encrypted
-    );
-
-    const decoder = new TextDecoder();
-    return decoder.decode(new Uint8Array(decrypted));
+    return await decryptQuiet(encryptedData, password);
   } catch (error) {
     console.error('Error desencriptando datos:', error);
     throw new Error('Error de desencriptación');
   }
+};
+
+// Como decrypt, pero sin registrar el error (se usa para probar varias claves)
+const decryptQuiet = async (encryptedData: string, password: string): Promise<string> => {
+  const key = await deriveKey(password);
+
+  // Convertir desde base64
+  const binaryString = atob(encryptedData);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Extraer IV y datos encriptados
+  const iv = bytes.slice(0, 12);
+  const encrypted = bytes.slice(12);
+
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(iv) }, key, encrypted);
+  return new TextDecoder().decode(new Uint8Array(decrypted));
 };
 
 // Generar hash para fingerprints
@@ -111,13 +107,24 @@ export const generateHash = async (data: string): Promise<string> => {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-// Generar contraseña derivada del dispositivo
+// Clave aleatoria de este navegador, generada una sola vez. Antes la clave dependía del user
+// agent y del día del mes, así que al día siguiente (o al actualizarse el navegador) no se
+// podían descifrar los proveedores guardados y se perdían.
+const DEVICE_KEY = 'nexo_device_key';
+
 export const getDevicePassword = (): string => {
-  const userAgent = navigator.userAgent;
-  const timestamp = new Date().getDate().toString(); // Cambia diariamente
-  const domain = window.location.hostname;
-  return `${userAgent}-${timestamp}-${domain}`;
+  let key = localStorage.getItem(DEVICE_KEY);
+  if (!key) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    key = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem(DEVICE_KEY, key);
+  }
+  return key;
 };
+
+// Contraseñas del esquema anterior (una por día del mes) para migrar datos ya guardados
+const legacyPasswords = (): string[] =>
+  Array.from({ length: 31 }, (_, i) => `${navigator.userAgent}-${i + 1}-${window.location.hostname}`);
 
 // Verificar si el navegador soporta Web Crypto API
 export const isEncryptionSupported = (): boolean => {
@@ -173,9 +180,21 @@ export class SecureStorage {
       const keyMetadata = metadata?.[key];
       
       if (keyMetadata?.encrypted) {
-        const password = getDevicePassword();
-        const decrypted = await decrypt(encrypted, password);
-        return JSON.parse(decrypted);
+        try {
+          return JSON.parse(await decryptQuiet(encrypted, getDevicePassword()));
+        } catch {
+          // Cifrado con el esquema anterior: probar sus claves y volver a cifrar con la nueva
+          for (const legacy of legacyPasswords()) {
+            try {
+              const value = JSON.parse(await decryptQuiet(encrypted, legacy));
+              await this.setItem(key, value);
+              return value;
+            } catch {
+              /* siguiente candidata */
+            }
+          }
+          throw new Error('No se pudieron descifrar los datos guardados');
+        }
       } else {
         // Datos no encriptados (fallback)
         return JSON.parse(encrypted);

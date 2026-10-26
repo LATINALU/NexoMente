@@ -32,6 +32,8 @@ export interface ChatMessage {
   isSynthesis?: boolean;
   /** true para las observaciones del Revisor crítico */
   isReview?: boolean;
+  /** true para el cálculo de costos hecho por Nexo con código (agentes de Mercado Libre) */
+  isCalculation?: boolean;
   /** true si el usuario detuvo la generación a mitad */
   interrupted?: boolean;
 }
@@ -73,6 +75,9 @@ export type RunMode = "parallel" | "sequential";
 /** prefetch: búsqueda previa para todos · native: cada agente usa herramientas (function calling) */
 export type ToolMode = "prefetch" | "native";
 
+/** Esfuerzo de razonamiento de los modelos que "piensan" · auto: lo decide el proveedor */
+export type ReasoningLevel = "auto" | "none" | "low" | "medium" | "high";
+
 export interface RunOptions {
   mode: RunMode;
   synthesize: boolean;
@@ -82,6 +87,7 @@ export interface RunOptions {
   review: boolean;
   /** Sugerir preguntas de seguimiento */
   followups: boolean;
+  reasoning: ReasoningLevel;
 }
 
 export const SYNTHESIS_ID = "coordinator";
@@ -171,10 +177,10 @@ function storeMessage(m: ChatMessage, meta: Record<string, any>): StoredMessage 
   return {
     role: m.role,
     content: m.content,
-    timestamp: m.timestamp.toISOString(),
+    timestamp: new Date(m.timestamp).toISOString(),
     agentResponses: m.agentResponse ? [m.agentResponse] : undefined,
     agent_id: m.isSynthesis ? SYNTHESIS_ID : m.agentResponse?.agent_id,
-    metadata: { ...meta, isSynthesis: m.isSynthesis, isReview: m.isReview, interrupted: m.interrupted, agentName: m.agentName, agentEmoji: m.agentEmoji },
+    metadata: { ...meta, isSynthesis: m.isSynthesis, isReview: m.isReview, isCalculation: m.isCalculation, interrupted: m.interrupted, agentName: m.agentName, agentEmoji: m.agentEmoji },
   };
 }
 
@@ -190,8 +196,19 @@ function loadMessage(m: StoredMessage): ChatMessage {
     agentEmoji: meta.agentEmoji ?? response?.agent_emoji,
     isSynthesis: meta.isSynthesis || m.agent_id === SYNTHESIS_ID,
     isReview: meta.isReview,
+    isCalculation: meta.isCalculation,
     interrupted: meta.interrupted,
   };
+}
+
+/** Un árbol leído de JSON trae las fechas como texto: las vuelve a convertir en Date. */
+export function reviveTree(tree: ConversationTree): ConversationTree {
+  const revive = (m: ChatMessage): ChatMessage => ({ ...m, timestamp: new Date(m.timestamp || Date.now()) });
+  const turns: Record<string, Turn> = {};
+  for (const [id, turn] of Object.entries(tree.turns || {})) {
+    turns[id] = { ...turn, user: revive(turn.user), answers: (turn.answers || []).map(revive) };
+  }
+  return { ...tree, turns };
 }
 
 /** Todas las ramas como lista plana; el árbol viaja en metadata (turnId/parentId). */
@@ -270,7 +287,7 @@ export function conversationToMarkdown(title: string, path: Turn[]): string {
   for (const turn of path) {
     lines.push("---", "", "## 🧑 Consulta", "", turn.user.content, "");
     for (const msg of turn.answers) {
-      const who = msg.isSynthesis ? "🧭 Respuesta integrada" : msg.isReview ? "🔍 Revisor crítico" : `${msg.agentEmoji || "🤖"} ${msg.agentName || "Agente"}`;
+      const who = msg.isSynthesis ? "🧭 Respuesta integrada" : msg.isReview ? "🔍 Revisor crítico" : msg.isCalculation ? "🧮 Cálculo de costos" : `${msg.agentEmoji || "🤖"} ${msg.agentName || "Agente"}`;
       lines.push(`### ${who}${msg.interrupted ? " _(interrumpido)_" : ""}`, "", msg.content, "");
     }
     if (turn.sources?.length) {

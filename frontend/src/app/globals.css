@@ -1,3 +1,6 @@
+/* Temas: @import debe ir antes que cualquier otra regla (CSS lo ignora si no) */
+@import '../styles/themes.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -267,5 +270,31 @@
   min-width: 0;
 }
 
-/* Import themes - MUST be at the end to override base variables */
-@import '../styles/themes.css';
+
+
+
+/* Cursor parpadeante al final del texto que se está escribiendo */
+.streaming-caret > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: hsl(var(--primary));
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+/* Respetar "reducir movimiento" del sistema operativo */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

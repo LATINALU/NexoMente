@@ -41,7 +41,7 @@ describe("queryCoach", () => {
 });
 
 const options = (over: Partial<RunOptions> = {}): RunOptions => ({
-  mode: "parallel", synthesize: true, webSearch: false, toolMode: "prefetch", review: false, followups: true, ...over,
+  mode: "parallel", synthesize: true, webSearch: false, toolMode: "prefetch", review: false, followups: true, reasoning: "auto", ...over,
 });
 
 describe("estimateRun", () => {
@@ -81,5 +81,15 @@ describe("analyzeTeam", () => {
     const three = [agent("a", "x"), agent("b", "y"), agent("c", "z")];
     expect(analyzeTeam(three, { synthesize: false, review: false }).insights.map((i) => i.id)).toEqual(["nosynth"]);
     expect(analyzeTeam(three, { synthesize: true, review: false }).categories).toHaveLength(3);
+  });
+});
+
+describe("coach: modelo local", () => {
+  it("sugiere apagar el razonamiento solo con modelo local y razonamiento activo", () => {
+    const base = { text: "Plan de marketing para mi tienda online de ropa", attachments: 0, webReady: false, webOn: false,
+                   reviewOn: false, selectedAgents: 2, hasHistory: false };
+    expect(analyzeQuery({ ...base, localModel: true, reasoning: "auto" }).some((t) => t.action === "reasoning-off")).toBe(true);
+    expect(analyzeQuery({ ...base, localModel: true, reasoning: "none" }).some((t) => t.action === "reasoning-off")).toBe(false);
+    expect(analyzeQuery({ ...base, localModel: false, reasoning: "auto" }).some((t) => t.action === "reasoning-off")).toBe(false);
   });
 });

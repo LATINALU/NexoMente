@@ -44,7 +44,7 @@ export default function SharedConversationPage() {
         <a href="/" className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/favicon.svg" alt="" className="h-9 w-9 rounded-lg" />
-          <span className="font-black text-lg bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Nexo</span>
+          <span className="font-black text-lg bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Nexo</span>
         </a>
         {data && (
           <button onClick={importConversation}

@@ -22,6 +22,10 @@ export interface RunState {
   /** Últimos caracteres del razonamiento por agente (incluye "reviewer" y "coordinator") */
   thinking: Record<string, string>;
   toolMode: "prefetch" | "native";
+  /** Para la barra de progreso: cuándo empezó y qué fases habrá */
+  startedAt: number | null;
+  plan: { review: boolean; synthesis: boolean };
+  reviewDone: boolean;
 }
 
 export type RunEffect =
@@ -37,6 +41,7 @@ const THINKING_TAIL = 800;
 
 export const idleRun = (): RunState => ({
   running: false, agents: {}, order: [], research: null, review: null, synthesis: null, thinking: {}, toolMode: "prefetch",
+  startedAt: null, plan: { review: false, synthesis: false }, reviewDone: false,
 });
 
 const without = (agents: Record<string, LiveAgent>, id: string) => {
@@ -55,7 +60,10 @@ export function reduceRun(state: RunState, event: ServerEvent): { state: RunStat
       const agents: Record<string, LiveAgent> = {};
       for (const a of event.agents) agents[a.id] = { id: a.id, name: a.name, emoji: a.emoji || "🤖", text: "", status: "waiting" };
       return {
-        state: { ...idleRun(), running: true, agents, order: event.agents.map((a) => a.id), toolMode: event.tool_mode || "prefetch" },
+        state: {
+          ...idleRun(), running: true, agents, order: event.agents.map((a) => a.id), toolMode: event.tool_mode || "prefetch",
+          startedAt: Date.now(), plan: { review: !!event.review, synthesis: !!event.synthesis },
+        },
         effects: [],
       };
     }
@@ -65,6 +73,12 @@ export function reduceRun(state: RunState, event: ServerEvent): { state: RunStat
       return { state: { ...state, research: { queries: event.queries } }, effects: [] };
     case "context_ready":
       return { state: { ...state, research: null }, effects: [{ kind: "sources", sources: event.sources }] };
+    case "calculation":
+      return {
+        state,
+        effects: [{ kind: "answer", message: { role: "assistant", content: event.content, timestamp: new Date(), isCalculation: true,
+                                               agentName: event.title || "Cálculo de costos", agentEmoji: "🧮" } }],
+      };
     case "tool_call":
       return {
         state: patchAgent(state, event.agent_id, (a) => ({ ...a, tools: [...(a.tools || []), { tool: event.tool, query: event.query }] })),
@@ -93,7 +107,8 @@ export function reduceRun(state: RunState, event: ServerEvent): { state: RunStat
     case "agent_error":
       if (event.agent_id === "coordinator" || event.agent_id === "reviewer") {
         return {
-          state: { ...state, [event.agent_id === "coordinator" ? "synthesis" : "review"]: null },
+          state: { ...state, [event.agent_id === "coordinator" ? "synthesis" : "review"]: null,
+                 reviewDone: state.reviewDone || event.agent_id === "reviewer" },
           effects: [{ kind: "notice", text: `${event.agent} no pudo completar: ${event.error}` }],
         };
       }
@@ -111,7 +126,7 @@ export function reduceRun(state: RunState, event: ServerEvent): { state: RunStat
       return { state: { ...state, review: (state.review ?? "") + event.delta }, effects: [] };
     case "review_complete":
       return {
-        state: { ...state, review: null },
+        state: { ...state, review: null, reviewDone: true },
         effects: [{ kind: "answer", message: { role: "assistant", content: event.content, timestamp: new Date(), isReview: true,
                                                agentName: "Revisor crítico", agentEmoji: "🔍" } }],
       };

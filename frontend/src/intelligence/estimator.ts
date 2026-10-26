@@ -76,6 +76,11 @@ export function estimateRun(input: EstimateInput): RunEstimate | null {
     low += 700;
     high += 1000;
   }
+  // Los modelos que piensan cobran el razonamiento como tokens de salida
+  if (options.reasoning === "high") {
+    high *= 1.6;
+    breakdown.push("razonamiento alto");
+  }
 
   // Calibración: tokens reales por agente en turnos anteriores con opciones similares
   const samples = input.previousTurns

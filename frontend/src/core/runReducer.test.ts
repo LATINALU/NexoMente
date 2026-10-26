@@ -19,6 +19,15 @@ const start: ServerEvent = {
 };
 
 describe("reduceRun", () => {
+  it("el cálculo de costos queda como respuesta marcada", () => {
+    const raw = { type: "calculation", title: "Cálculo de costos", content: "| Precio | $249 |" };
+    const event = parseServerEvent(raw)!;
+    expect(event).not.toBeNull();
+    expect(parseServerEvent({ type: "calculation" })).toBeNull();
+    const { effects } = play([start, event]);
+    expect(effects[0]).toMatchObject({ kind: "answer", message: { isCalculation: true, agentEmoji: "🧮", content: "| Precio | $249 |" } });
+  });
+
   it("acumula tokens por agente y emite la respuesta al terminar", () => {
     const { state, effects } = play([
       start,

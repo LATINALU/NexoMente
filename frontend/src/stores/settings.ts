@@ -14,6 +14,7 @@ import type { DocSettings } from "@/lib/docSettings";
 
 export const DEFAULT_RUN_OPTIONS: RunOptions = {
   mode: "parallel", synthesize: true, webSearch: false, toolMode: "prefetch", review: false, followups: true,
+  reasoning: "auto",
 };
 
 interface SettingsState {
@@ -75,10 +76,14 @@ export const useSettings = create<SettingsState>()(
       partialize: ({ runOptions, agentInstructions, favorites, docSettings }) => ({ runOptions, agentInstructions, favorites, docSettings }),
       // Primera vez: adoptar las claves que usaban las versiones anteriores
       merge: (persisted, current) => {
-        if (persisted) return { ...current, ...(persisted as Partial<SettingsState>) };
+        if (persisted) {
+          const saved = persisted as Partial<SettingsState>;
+          // Opciones agregadas en versiones nuevas toman su valor por defecto
+          return { ...current, ...saved, runOptions: { ...DEFAULT_RUN_OPTIONS, ...saved.runOptions } };
+        }
         return {
           ...current,
-          runOptions: legacy("nexo_run_options", DEFAULT_RUN_OPTIONS),
+          runOptions: { ...DEFAULT_RUN_OPTIONS, ...legacy("nexo_run_options", DEFAULT_RUN_OPTIONS) },
           agentInstructions: legacy<Record<string, string>>("nexo_agent_instructions", {}),
           favorites: legacyList("nexo_favorite_agents"),
           docSettings: legacy<DocSettings>("nexo_doc_settings", { ocr: null, embeddings: null }),

@@ -28,6 +28,8 @@ export interface Conversation {
 }
 
 const STORAGE_KEY = "nexo_conversations";
+/** Se emite al guardar, borrar o renombrar: el historial se actualiza sin recargar. */
+export const CONVERSATIONS_CHANGED = "nexo:conversations-changed";
 const CURRENT_CONVERSATION_KEY = "nexo_current_conversation";
 const CLIENT_ID_KEY = "nexo_client_id";
 
@@ -59,6 +61,11 @@ export class ConversationStorage {
   /**
    * Guardar una conversación
    */
+  private static persist(conversations: Conversation[]): void {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(CONVERSATIONS_CHANGED));
+  }
+
   static saveConversation(conversation: Conversation): void {
     try {
       const conversations = this.getAllConversations();
@@ -73,7 +80,7 @@ export class ConversationStorage {
         conversations.push(conversation);
       }
       
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+      this.persist(conversations);
     } catch (error) {
       console.error("Error saving conversation:", error);
     }
@@ -94,7 +101,7 @@ export class ConversationStorage {
     try {
       const conversations = this.getAllConversations();
       const filtered = conversations.filter(c => c.id !== id);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+      this.persist(filtered);
     } catch (error) {
       console.error("Error deleting conversation:", error);
     }
@@ -126,7 +133,7 @@ export class ConversationStorage {
       if (conversation) {
         conversation.title = title;
         conversation.updatedAt = new Date().toISOString();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+        this.persist(conversations);
       }
     } catch (error) {
       console.error("Error updating conversation title:", error);
@@ -223,7 +230,7 @@ export class ConversationStorage {
         
         // Mantener solo las más recientes
         const toKeep = conversations.slice(0, keepCount);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(toKeep));
+        this.persist(toKeep);
       }
     } catch (error) {
       console.error("Error cleaning old conversations:", error);

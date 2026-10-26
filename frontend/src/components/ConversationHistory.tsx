@@ -7,14 +7,14 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   MessageSquare, Plus, Trash2, Edit2,
   Check, X, FileJson, FileText, Clock, Brain, Save, RefreshCw, Server
 } from "lucide-react";
-import { ConversationStorage, Conversation } from "@/lib/conversationStorage";
+import { CONVERSATIONS_CHANGED, ConversationStorage, Conversation } from "@/lib/conversationStorage";
 
 interface ConversationHistoryProps {
   currentConversationId: string | null;
@@ -37,12 +37,7 @@ export function ConversationHistory({
   const [isLoading, setIsLoading] = useState(false);
   const [useServer, setUseServer] = useState(true);
 
-  // Reload conversations when the current conversation changes (new save, new conversation, etc.)
-  useEffect(() => {
-    loadConversations();
-  }, [currentConversationId]);
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     setIsLoading(true);
     try {
       // Siempre cargar desde localStorage (fuente principal y confiable)
@@ -80,7 +75,18 @@ export function ConversationHistory({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [useServer]);
+
+  // Recargar al cambiar de conversación y cada vez que el almacenamiento cambie (guardar, borrar, renombrar)
+  useEffect(() => {
+    loadConversations();
+  }, [currentConversationId, loadConversations]);
+
+  useEffect(() => {
+    const reload = () => { loadConversations(); };
+    window.addEventListener(CONVERSATIONS_CHANGED, reload);
+    return () => window.removeEventListener(CONVERSATIONS_CHANGED, reload);
+  }, [loadConversations]);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -209,8 +215,9 @@ export function ConversationHistory({
                 onClick={() => onSelectConversation(conversation)}
                 className={cn(
                   "group relative p-3 rounded-lg cursor-pointer transition-colors",
-                  "hover:bg-accent",
-                  currentConversationId === conversation.id && "bg-accent"
+                  // accent es un color de marca brillante en algunos temas: el texto quedaba ilegible
+                  "hover:bg-muted/60",
+                  currentConversationId === conversation.id && "bg-primary/15 ring-1 ring-primary/40"
                 )}
               >
                 {editingId === conversation.id ? (
@@ -260,12 +267,15 @@ export function ConversationHistory({
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Acciones: con hover/teclado, y siempre en la conversación abierta (en móvil no hay hover) */}
+                    <div className={cn("items-center gap-1 mt-2 animate-in fade-in",
+                      currentConversationId === conversation.id ? "flex" : "hidden group-hover:flex group-focus-within:flex")}>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={(e) => startEditing(conversation, e)}
                         className="h-6 px-2 text-xs"
+                        title="Renombrar"
                       >
                         <Edit2 className="w-3 h-3" />
                       </Button>
@@ -292,6 +302,7 @@ export function ConversationHistory({
                         variant="ghost"
                         onClick={(e) => handleDelete(conversation.id, e)}
                         className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                        title="Eliminar"
                       >
                         <Trash2 className="w-3 h-3" />
                       </Button>

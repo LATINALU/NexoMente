@@ -18,6 +18,26 @@ const EMPTY_PROVIDER: ApiProvider = {
 
 const isUsable = (p: ApiProvider) => p.isActive && (!!p.apiKey || p.type === "local") && (p.enabledModels?.length || 0) > 0;
 
+// Último modelo elegido (no secreto): sin esto, cada recarga volvía al primer modelo de la lista
+const MODEL_KEY = "nexo_selected_model";
+
+function savedModel(): { providerId: string; model: string } | null {
+  try {
+    const raw = localStorage.getItem(MODEL_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveModel(providerId: string, model: string) {
+  try {
+    localStorage.setItem(MODEL_KEY, JSON.stringify({ providerId, model }));
+  } catch {
+    /* almacenamiento no disponible: solo se pierde la preferencia */
+  }
+}
+
 interface WorkspaceState {
   // proveedores
   providers: ApiProvider[];
@@ -45,14 +65,22 @@ export const useWorkspace = create<WorkspaceState>()((set, get) => ({
   apiConfig: EMPTY_PROVIDER,
   model: DEFAULT_MODEL,
   setProviders: (providers) => {
-    const active = providers.find(isUsable);
-    set((s) => ({
-      providers,
-      apiConfig: active || EMPTY_PROVIDER,
-      model: active ? (active.enabledModels?.includes(s.model) ? s.model : active.enabledModels?.[0] || DEFAULT_MODEL) : s.model,
-    }));
+    const saved = savedModel();
+    const preferred = saved && providers.find((p) => p.id === saved.providerId && isUsable(p) && p.enabledModels?.includes(saved.model));
+    const active = preferred || providers.find(isUsable);
+    set((s) => {
+      const keep = active?.id === s.apiConfig.id && active.enabledModels?.includes(s.model);
+      const model = !active ? s.model
+        : preferred ? saved!.model
+        : keep ? s.model
+        : active.enabledModels?.[0] || DEFAULT_MODEL;
+      return { providers, apiConfig: active || EMPTY_PROVIDER, model };
+    });
   },
-  selectModel: (provider, model) => set({ apiConfig: provider, model }),
+  selectModel: (provider, model) => {
+    saveModel(provider.id, model);
+    set({ apiConfig: provider, model });
+  },
 
   selectedAgents: [],
   toggleAgent: (id) =>

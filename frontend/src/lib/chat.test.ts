@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ChatMessage, ConversationTree, Turn, activePath, addTurn, buildHistory, conversationToMarkdown, emptyTree,
-  latestLeaf, messagesToTree, siblingsOf, slugify, treeToMessages, updateTurn,
+  latestLeaf, messagesToTree, reviveTree, siblingsOf, slugify, treeToMessages, updateTurn,
 } from "./chat";
 
 let clock = 0;
@@ -71,6 +71,17 @@ describe("árbol de turnos", () => {
     const path = activePath(tree);
     expect(path.map((x) => x.user.content)).toEqual(["q1", "q2"]);
     expect(path[1].answers[0].isSynthesis).toBe(true);
+  });
+});
+
+describe("árbol guardado en JSON", () => {
+  it("al recargarlo las fechas vuelven a ser Date y se puede volver a guardar", () => {
+    const fromJson = JSON.parse(JSON.stringify(branchedTree()));
+    expect(() => treeToMessages(fromJson)).not.toThrow(); // storeMessage tolera texto
+    const revived = reviveTree(fromJson);
+    expect(revived.turns.b.user.timestamp).toBeInstanceOf(Date);
+    expect(revived.turns.b.answers[1].timestamp).toBeInstanceOf(Date);
+    expect(activePath(revived).map((x) => x.id)).toEqual(["a", "b2", "d"]);
   });
 });
 

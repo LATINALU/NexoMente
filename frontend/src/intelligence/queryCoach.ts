@@ -3,7 +3,7 @@
  * y sugiere cómo obtener una mejor respuesta. Reglas simples, explicables y testeables.
  */
 
-export type CoachAction = "enable-web" | "configure-web" | "attach" | "suggest-team" | "add-context" | "enable-review";
+export type CoachAction = "enable-web" | "configure-web" | "attach" | "suggest-team" | "add-context" | "enable-review" | "reasoning-off";
 
 export interface CoachTip {
   id: string;
@@ -21,6 +21,9 @@ export interface CoachContext {
   reviewOn: boolean;
   selectedAgents: number;
   hasHistory: boolean;
+  /** Modelo local (Ollama/LM Studio): el razonamiento lo vuelve varias veces más lento */
+  localModel?: boolean;
+  reasoning?: string;
 }
 
 const norm = (t: string) => t.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -44,6 +47,10 @@ export function analyzeQuery(ctx: CoachContext): CoachTip[] {
   }
   if (ctx.selectedAgents === 0) {
     tips.push({ id: "no-agents", level: "warn", text: "No hay agentes seleccionados.", action: "suggest-team", actionLabel: "Sugerir equipo" });
+  }
+  if (ctx.localModel && ctx.reasoning !== "none" && ctx.selectedAgents > 0) {
+    tips.push({ id: "local-reasoning", level: "info", text: "Modelo local: con el razonamiento apagado responde varias veces más rápido.",
+                action: "reasoning-off", actionLabel: "Apagar razonamiento" });
   }
   if (RECENCY.test(t) && !ctx.webOn) {
     tips.push(ctx.webReady

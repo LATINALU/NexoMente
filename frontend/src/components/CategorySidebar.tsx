@@ -28,7 +28,8 @@ import { useSettings } from "@/stores/settings";
 import { AuthModal } from "@/components/AuthModal";
 import { ProfileModal } from "@/components/ProfileModal";
 import { useAuth } from "@/components/AuthProvider";
-import { Agent, Category, getCategories, getAgents } from "@/lib/api";
+import { Agent, Category, getCategories } from "@/lib/api";
+import { useWorkspace } from "@/stores/workspace";
 
 interface CategorySidebarProps {
   selectedAgents: string[];
@@ -105,10 +106,13 @@ export function CategorySidebar({
 }: CategorySidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  // El catálogo de agentes vive en el store (una sola descarga para toda la app)
+  const agents = useWorkspace((s) => s.catalog);
+  const catalogStatus = useWorkspace((s) => s.catalogStatus);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const isLoading = categoriesLoading || catalogStatus === "idle" || catalogStatus === "loading";
   const [isMobile, setIsMobile] = useState(false);
 
   const lang = getCurrentLanguage();
@@ -118,22 +122,11 @@ export function CategorySidebar({
 
   // Cargar categorías y agentes
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        const [categoriesRes, agentsRes] = await Promise.all([
-          getCategories(),
-          getAgents(),
-        ]);
-        setCategories(categoriesRes.categories);
-        setAgents(agentsRes.agents);
-      } catch (error) {
-        console.error("Error loading agents:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
+    useWorkspace.getState().loadCatalog();
+    getCategories()
+      .then((res) => setCategories(res.categories))
+      .catch((error) => console.error("Error loading categories:", error))
+      .finally(() => setCategoriesLoading(false));
   }, []);
 
   // Detectar tamaño de pantalla
@@ -304,7 +297,8 @@ export function CategorySidebar({
     <div
       className={cn(
         "h-full bg-gradient-to-b from-card/80 to-card/50 backdrop-blur-md border-r border-primary/30 flex flex-col shadow-2xl overflow-hidden",
-        isMobile ? "w-full" : "w-80"
+        // En móvil, expandida se superpone al chat (se cierra con la flecha)
+        isMobile ? "fixed inset-y-0 left-0 z-40 w-[85vw] max-w-80" : "w-80"
       )}
     >
       {/* Header */}
@@ -405,12 +399,19 @@ export function CategorySidebar({
                 {favoriteAgents.map(renderAgentRow)}
               </div>
             )}
+            {searchTerm && filteredAgents.length === 0 && (
+              <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                {lang === "es" ? "Ningún agente coincide con la búsqueda." : "No agents match your search."}
+              </p>
+            )}
             {categories.map((category) => {
               const categoryAgents = agentsByCategory[category.id] || [];
+              // Al buscar: solo categorías con resultados, y abiertas para ver los agentes
+              if (searchTerm && categoryAgents.length === 0) return null;
               const selectedInCategory = categoryAgents.filter((a) =>
                 selectedAgents.includes(a.id)
               ).length;
-              const isExpanded = expandedCategories.includes(category.id);
+              const isExpanded = !!searchTerm || expandedCategories.includes(category.id);
               const colorClass =
                 categoryColors[category.id] || categoryColors.software_development;
 

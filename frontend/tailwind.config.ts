@@ -1,14 +1,43 @@
 import type { Config } from "tailwindcss";
+import typography from "@tailwindcss/typography";
+import animate from "tailwindcss-animate";
 
 const config: Config = {
   darkMode: ["class"],
-  content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  // Todo src/: las clases usadas solo en features/, stores/, lib/… también deben generarse
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
+      // El Markdown (`prose`) toma los colores del tema activo de Nexo, no los grises por defecto
+      typography: {
+        DEFAULT: {
+          css: {
+            "--tw-prose-body": "hsl(var(--foreground) / 0.9)",
+            "--tw-prose-headings": "hsl(var(--foreground))",
+            "--tw-prose-lead": "hsl(var(--muted-foreground))",
+            "--tw-prose-links": "hsl(var(--primary))",
+            "--tw-prose-bold": "hsl(var(--foreground))",
+            "--tw-prose-counters": "hsl(var(--muted-foreground))",
+            "--tw-prose-bullets": "hsl(var(--primary) / 0.7)",
+            "--tw-prose-hr": "hsl(var(--border))",
+            "--tw-prose-quotes": "hsl(var(--foreground))",
+            "--tw-prose-quote-borders": "hsl(var(--primary) / 0.5)",
+            "--tw-prose-captions": "hsl(var(--muted-foreground))",
+            "--tw-prose-code": "hsl(var(--foreground))",
+            "--tw-prose-pre-code": "hsl(var(--foreground))",
+            "--tw-prose-pre-bg": "hsl(var(--muted))",
+            "--tw-prose-th-borders": "hsl(var(--border))",
+            "--tw-prose-td-borders": "hsl(var(--border) / 0.6)",
+            "--tw-prose-invert-body": "hsl(var(--foreground) / 0.9)",
+            "--tw-prose-invert-headings": "hsl(var(--foreground))",
+            "--tw-prose-invert-links": "hsl(var(--primary))",
+            "--tw-prose-invert-bold": "hsl(var(--foreground))",
+            "--tw-prose-invert-bullets": "hsl(var(--primary) / 0.7)",
+            "--tw-prose-invert-th-borders": "hsl(var(--border))",
+            "--tw-prose-invert-td-borders": "hsl(var(--border) / 0.6)",
+          },
+        },
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -107,7 +136,8 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  // typography: estilos `prose` del Markdown de las respuestas (listas, tablas, títulos)
+  plugins: [typography, animate], // animate: clases animate-in/fade-in/slide-in usadas en la UI
 };
 
 export default config;
