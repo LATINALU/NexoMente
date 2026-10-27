@@ -86,3 +86,6 @@ insforge/auth/node_modules/
 # SQLite databases (migrated to PostgreSQL)
 *.db
 /data/
+
+# Datos locales de la memoria (Neuromapa): registro en vivo, índice, clave del mapa
+datos-mente/

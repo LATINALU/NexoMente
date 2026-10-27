@@ -26,9 +26,9 @@ export function EmptyState({ steps, onExample }: { steps: ReadinessStep[]; onExa
         <div className="bg-gradient-to-br from-primary/20 to-cyan-500/20 rounded-full p-7 mb-6 ring-1 ring-primary/30">
           <Brain className="h-14 w-14 text-primary" />
         </div>
-        <h3 className="text-2xl font-black mb-2 bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent">Nexo</h3>
+        <h3 className="text-2xl font-black mb-2 bg-gradient-to-r from-primary to-cyan-400 bg-clip-text text-transparent">NexoMente</h3>
         <p className="text-sm text-muted-foreground mb-6">
-          Un equipo de especialistas trabaja tu consulta en paralelo; un Coordinador integra los aportes con fuentes citadas.
+          Un equipo de especialistas trabaja tu consulta en paralelo, consulta tus notas y un Coordinador integra todo con fuentes citadas. Abre el 🧠 para ver tu memoria en vivo.
         </p>
 
         {pending.length > 0 && (

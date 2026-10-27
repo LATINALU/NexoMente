@@ -39,12 +39,15 @@ export interface ChatMessage {
 }
 
 export interface Source {
-  label: string; // D1, W2…
-  kind: "document" | "web";
+  label: string; // N1, D1, W2…
+  kind: "note" | "document" | "web";
   title: string;
   url?: string;
   document_id?: string;
   chunk?: number;
+  /** Notas de la memoria (Neuromapa): archivo y renglón */
+  path?: string;
+  line?: number;
 }
 
 export interface LiveAgent {
@@ -88,6 +91,8 @@ export interface RunOptions {
   /** Sugerir preguntas de seguimiento */
   followups: boolean;
   reasoning: ReasoningLevel;
+  /** Usar tus notas (memoria de Neuromapa) como contexto citable [N#] */
+  notes: boolean;
 }
 
 export const SYNTHESIS_ID = "coordinator";

@@ -81,9 +81,18 @@ ERRORES = {400: "El pedido vino mal armado.", 403: "Desde ahí no se puede entra
            404: "No hay nada en esa dirección.", 501: "El mapa solo atiende pedidos para ver la página."}
 REINTENTOS = 3
 ESPERA_GENERAR = 10 * 60
+RE_ORIGEN_LOCAL = re.compile(r"http://(localhost|127\.0\.0\.1):[0-9]{1,5}\Z")
+
+
+def marcos_permitidos(valor):
+    """NexoMente incrusta el mapa en su app: solo orígenes locales explícitos (NEUROMAPA_MARCOS); si no, nadie."""
+    origenes = [o for o in str(valor or "").split() if RE_ORIGEN_LOCAL.match(o)]
+    return " ".join(origenes) if origenes else "'none'"
+
+
 POLITICA = ("default-src 'self'; script-src {scripts}; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; "
-            "form-action 'none'; frame-ancestors 'none'")
+            "form-action 'none'; frame-ancestors " + marcos_permitidos(os.environ.get("NEUROMAPA_MARCOS")))
 RE_ETIQUETA_SCRIPT = re.compile(rb"(?m)^<script>")
 ROTADOS_AL_ARRANCAR = 7
 APRENDER_CADA = 60

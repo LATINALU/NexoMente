@@ -21,8 +21,8 @@ export function AppHeader({ wsConnected, onOpenSettings }: { wsConnected: boolea
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/favicon.svg" alt="" className="h-11 w-11 rounded-xl shadow-lg shadow-primary/20" />
         <div className="hidden sm:block">
-          <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Nexo</h1>
-          <span className="text-xs font-semibold text-muted-foreground">Equipos de agentes IA · 500 especialistas</span>
+          <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">NexoMente</h1>
+          <span className="text-xs font-semibold text-muted-foreground">Agentes IA con memoria · 500 especialistas</span>
         </div>
       </div>
 

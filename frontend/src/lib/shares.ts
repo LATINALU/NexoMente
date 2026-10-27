@@ -69,6 +69,7 @@ export function toSharedTurns(path: Turn[]): SharedTurn[] {
         is_review: !!a.isReview,
       }))
       .slice(0, 15),
+    // Sin s.path: la ruta de una nota en tu disco no viaja en un link compartido
     sources: (t.sources || []).slice(0, 40).map((s) => ({ label: s.label, kind: s.kind, title: s.title, url: s.url ?? null })),
   }));
 }
@@ -122,7 +123,7 @@ export function sharedToTree(shared: SharedConversation): ConversationTree {
       parentId,
       user: { role: "user", content: turn.question, timestamp: new Date(clock) },
       answers,
-      sources: turn.sources.map((s) => ({ label: s.label, kind: s.kind === "document" ? "document" : "web", title: s.title, url: s.url || undefined })),
+      sources: turn.sources.map((s) => ({ label: s.label, kind: s.kind === "document" || s.kind === "note" ? s.kind : "web", title: s.title, url: s.url || undefined })),
       createdAt: new Date(clock++).toISOString(),
     };
     tree = addTurn(tree, t);

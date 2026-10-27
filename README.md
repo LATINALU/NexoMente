@@ -1,13 +1,52 @@
-<p align="center"><img src="frontend/public/favicon.svg" width="88" alt="Nexo"></p>
+<p align="center"><img src="frontend/public/favicon.svg" width="88" alt="NexoMente"></p>
 
-<h1 align="center">Nexo</h1>
-<p align="center"><b>Equipos de agentes IA que investigan, leen tus documentos y responden juntos.</b></p>
+<h1 align="center">NexoMente</h1>
+<p align="center"><b>Equipos de agentes IA con memoria: investigan, leen tus notas y documentos, y responden juntos.</b></p>
 
-Elegís un equipo de especialistas (o dejás que Nexo lo arme), los agentes trabajan **en paralelo** sobre tu consulta con **streaming token a token**, consultan **tus documentos** y **la web**, y un **Coordinador** integra todo en una respuesta final con **fuentes citadas**.
+NexoMente une dos proyectos:
+
+- **[Nexo](https://github.com/LATINALU/Nexo)**: equipos de agentes IA que trabajan **en paralelo** con streaming, consultan
+  tus documentos y la web, y un **Coordinador** integra todo con **fuentes citadas**.
+- **[Neuromapa](https://github.com/lumiel777/neuromapa)** (en `neuromapa/`): tu memoria como un **cerebro 3D en vivo**,
+  con un buscador de notas, un médico que avisa datos viejos y aprendizaje por uso.
+
+Juntos: los agentes **consultan tus notas** (la memoria de Claude Code, tus `CLAUDE.md` y las carpetas que sumes) y las
+citan como **[N1]**; mientras trabajan, el **🧠 Cerebro** muestra en vivo qué nota lee cada agente.
 
 - **500 agentes** en **50 categorías**, definidos como datos (YAML).
-- **Trae tu propia API key**: Groq, OpenAI, Anthropic, Google, OpenRouter u Ollama/LM Studio local.
-- Funciona como invitado (todo en el navegador) o con cuenta (historial, memoria y equipos sincronizados).
+- **Trae tu propio modelo**: Groq, OpenAI, Anthropic, Google, OpenRouter u **Ollama/LM Studio local**.
+- **Todo local**: tus notas nunca salen de tu computadora; solo el texto que va al modelo que elijas.
+
+## Iniciar
+
+Primera vez (Windows):
+
+```bat
+cd backend && python -m venv venv && venv\Scripts\python -m pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
+copy .env.nexo.example .env.nexo   &  copy frontend\.env.local.example frontend\.env.local
+```
+
+Después, cada vez: **doble clic en `iniciar.bat`** (prende Ollama si lo tenés, el backend y la app, y abre
+http://localhost:3000). En la app: **Ajustes → APIs & Modelos** para elegir el modelo.
+
+## La memoria (Neuromapa)
+
+| | |
+|---|---|
+| 🧠 **Usar mis notas** | Opción en ⚙ del chat (activada de fábrica). Antes de los agentes, el buscador de Neuromapa (BM25 con raíces en español e inglés) elige las notas que tocan la consulta y los agentes las reciben como contexto citable **[N#]**. |
+| 🗺️ **Cerebro en vivo** | Botón 🧠 del chat: el mapa 3D de Neuromapa dentro de la app. Cada agente de NexoMente aparece leyendo sus notas, igual que Claude Code. |
+| 🩺 **Médico** | El panel avisa notas con datos viejos: rutas que ya no existen, enlaces rotos, memorias que no entran en una lectura… |
+| 🔌 **Plugin de Claude Code** | `neuromapa/` sigue siendo el plugin de Claude Code: los hooks ven en vivo lo que hace Claude Code y le pasan contexto (ver `neuromapa/README.md`). |
+
+**Qué notas lee.** Sin configurar nada: la memoria de Claude Code (`~/.claude/projects/*/memory/`) y tus `CLAUDE.md`.
+Para sumar carpetas de notas o proyectos, escribí `datos-mente/config.json` (mismo formato que
+`neuromapa/demo/config.json`; ver `neuromapa/docs/como-funciona.md`).
+
+**Privacidad.** Las rutas `/api/mente/*` solo responden desde esta computadora y están apagadas en producción
+(`NEXOMENTE_MENTE=on` para forzarlas). Los datos de la memoria (registro en vivo, índice, clave del mapa) quedan en
+`datos-mente/`, fuera de git. El mapa se puede incrustar solo desde los orígenes locales de `NEXOMENTE_ORIGENES`.
+Al compartir una conversación por link, las fuentes [N#] viajan solo con su título, nunca con la ruta del archivo.
 
 ---
 
@@ -145,4 +184,5 @@ Los puertos se publican solo en `127.0.0.1`. Para exponerlo, usá un proxy con T
 
 ## Licencia
 
-MIT — ver [LICENSE](LICENSE).
+MIT. NexoMente (Nexo) — ver [LICENSE](LICENSE). Neuromapa © 2026 Cristofer Bonifacio, MIT — ver
+[neuromapa/LICENSE](neuromapa/LICENSE).

@@ -248,7 +248,7 @@ export function AppSettings({ isOpen, onClose, onProvidersChange }: AppSettingsP
                             <Settings className="h-6 w-6 animate-spin-slow" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-foreground">Ajustes de Nexo</h2>
+                            <h2 className="text-xl font-bold text-foreground">Ajustes de NexoMente</h2>
                             <p className="text-sm text-muted-foreground">Configura tu experiencia Equipos de agentes IA</p>
                         </div>
                     </div>

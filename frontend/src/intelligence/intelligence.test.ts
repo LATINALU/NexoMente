@@ -41,7 +41,7 @@ describe("queryCoach", () => {
 });
 
 const options = (over: Partial<RunOptions> = {}): RunOptions => ({
-  mode: "parallel", synthesize: true, webSearch: false, toolMode: "prefetch", review: false, followups: true, reasoning: "auto", ...over,
+  mode: "parallel", synthesize: true, webSearch: false, toolMode: "prefetch", review: false, followups: true, reasoning: "auto", notes: true, ...over,
 });
 
 describe("estimateRun", () => {

@@ -25,7 +25,8 @@ const REASONING: Choice<ReasoningLevel>[] = [
   { value: "low", title: "Bajo", help: "Piensa un poco antes de responder." },
   { value: "high", title: "Alto", help: "Piensa a fondo: mejor en problemas difíciles, más lento y caro." },
 ];
-const TOGGLES: Array<{ key: "synthesize" | "review" | "followups"; title: string; help: string }> = [
+const TOGGLES: Array<{ key: "notes" | "synthesize" | "review" | "followups"; title: string; help: string }> = [
+  { key: "notes", title: "Usar mis notas", help: "Los agentes consultan tu memoria (Neuromapa) y la citan como [N1]." },
   { key: "synthesize", title: "Respuesta integrada", help: "Un Coordinador une los aportes en una sola respuesta." },
   { key: "review", title: "Revisión crítica", help: "Un Revisor busca errores y vacíos antes de integrar. Usa más tokens." },
   { key: "followups", title: "Sugerir seguimientos", help: "Propone 3 preguntas para continuar." },

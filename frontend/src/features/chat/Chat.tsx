@@ -18,6 +18,8 @@ import { TaskSelector } from "@/components/TaskSelector";
 import { ShareDialog } from "@/components/ShareDialog";
 import { useChatSession } from "./useChatSession";
 import { useRunTitle } from "./useRunTitle";
+import { BrainPanel } from "@/features/mente/BrainPanel";
+import { menteEstado } from "@/lib/mente";
 import { onChatCommand } from "./commands";
 import { Composer, ComposerHandle } from "./components/Composer";
 import { EmptyState, ReadinessStep } from "./components/EmptyState";
@@ -53,6 +55,18 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
   const [shareOpen, setShareOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
   const [showTasks, setShowTasks] = useState(true);
+  // Cerebro (Neuromapa): solo si la memoria está habilitada en esta instalación
+  const [menteLista, setMenteLista] = useState(false);
+  const [showBrain, setShowBrain] = useState(false);
+  useEffect(() => {
+    menteEstado().then((e) => setMenteLista(e.habilitada && e.disponible));
+  }, []);
+  const toggleBrain = () => {
+    setShowBrain((open) => {
+      if (!open) setShowTasks(false); // el mapa necesita ancho
+      return !open;
+    });
+  };
   // Con poco ancho los paneles laterales dejan el chat demasiado angosto: arrancan cerrados
   useEffect(() => {
     if (window.innerWidth < 1536) setShowTasks(false);
@@ -149,7 +163,7 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
             <Button size="sm" variant="ghost" onClick={() => setShowMobilePanel(!showMobilePanel)} className="h-8 w-8 p-0">
               {showMobilePanel ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </Button>
-            <Brain className="h-4 w-4 text-primary" /><span className="font-semibold text-sm">Nexo</span>
+            <Brain className="h-4 w-4 text-primary" /><span className="font-semibold text-sm">NexoMente</span>
           </div>
           {connectionBadge}
         </div>
@@ -188,6 +202,12 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
                 <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} disabled={!path.length || processing} title="Compartir por link" className="text-xs gap-1">
                   <Link2 className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Compartir</span>
                 </Button>
+                {menteLista && (
+                  <Button size="sm" variant="ghost" onClick={toggleBrain} title={showBrain ? "Ocultar el cerebro" : "Ver el cerebro: tus notas y lo que leen los agentes"}
+                    className={cn("p-0 h-8 w-8", showBrain && "bg-primary/10 text-primary")}>
+                    <Brain className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => setShowTasks(!showTasks)} title={showTasks ? "Ocultar equipos y tareas" : "Mostrar equipos y tareas"}
                   className={cn("p-0 h-8 w-8", showTasks && "bg-primary/10")}>
                   <LayoutList className="h-4 w-4" />
@@ -268,6 +288,8 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
 
         <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} path={path}
           title={path[0]?.user.content.slice(0, 80) || "Conversación de Nexo"} />
+
+        {!mobile && showBrain && <BrainPanel onClose={() => setShowBrain(false)} className="w-[420px] 2xl:w-[560px] shrink-0" />}
 
         {!mobile && showTasks && <TaskSelector onSelect={setAgents} className="h-full shrink-0" header={sidePanelHeader} />}
 

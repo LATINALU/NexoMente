@@ -15,6 +15,7 @@ import type { DocSettings } from "@/lib/docSettings";
 export const DEFAULT_RUN_OPTIONS: RunOptions = {
   mode: "parallel", synthesize: true, webSearch: false, toolMode: "prefetch", review: false, followups: true,
   reasoning: "auto",
+  notes: true,
 };
 
 interface SettingsState {

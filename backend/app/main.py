@@ -220,6 +220,8 @@ class ChatRun:
     tool_mode: str
     review: bool
     followups: bool
+    use_notes: bool = False
+    conversation_id: str = ""
 
 
 def _build_llm(api_config: Optional[Dict], model: str, reasoning: Any = None) -> LLMClient:
@@ -268,6 +270,8 @@ def _prepare_chat(data: Dict[str, Any]) -> ChatRun:
         tool_mode="native" if data.get("toolMode") == "native" else "prefetch",
         review=data.get("review") is True,
         followups=data.get("followups", True) is not False,
+        use_notes=data.get("notes") is True,
+        conversation_id=str(data.get("conversation_id") or "")[:100],
     )
 
 
@@ -280,7 +284,16 @@ async def _orchestrator(run: ChatRun, emit, user: Optional[Dict[str, Any]]) -> O
                         synthesize=run.synthesize, memory_context=await _load_memory(user), history=run.history,
                         agent_instructions=run.agent_instructions, documents=documents,
                         web_search_config=run.web_search, embedder=run.embedder, tool_mode=run.tool_mode,
-                        review=run.review, followups=run.followups)
+                        review=run.review, followups=run.followups, notes=_notes_for(run))
+
+
+def _notes_for(run: ChatRun):
+    """La memoria (Neuromapa) solo si el usuario la pidió y está habilitada en esta instalación."""
+    from app.routes.mente_routes import HABILITADA
+    from app.services import mente
+    if not run.use_notes or not HABILITADA or not mente.disponible():
+        return None
+    return mente.Memoria(run.conversation_id)
 
 
 async def _load_memory(user: Optional[Dict[str, Any]]) -> str:
@@ -433,6 +446,8 @@ class StreamingChatRequest(BaseModel):
     toolMode: str = "prefetch"
     review: bool = False
     followups: bool = True
+    notes: bool = False
+    conversation_id: str = Field("", max_length=100)
     reasoning: str = "auto"
 
 
@@ -527,6 +542,7 @@ from app.routes.admin_routes import router as admin_router  # noqa: E402
 from app.routes.document_routes import router as document_router  # noqa: E402
 from app.routes.team_routes import router as team_router  # noqa: E402
 from app.routes.share_routes import router as share_router  # noqa: E402
+from app.routes.mente_routes import router as mente_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(history_router)
@@ -535,6 +551,7 @@ app.include_router(admin_router)
 app.include_router(document_router)
 app.include_router(team_router)
 app.include_router(share_router)
+app.include_router(mente_router)
 
 
 if __name__ == "__main__":

@@ -83,6 +83,7 @@ _TEXT = {
         "synth_inputs": "Aportes de los especialistas",
         "synth_task": "Escribe la respuesta final integrada en markdown.",
         "docs": "Documentos adjuntos por el usuario (extractos relevantes)",
+        "notes": "Notas del usuario (su memoria personal, vía Neuromapa)",
         "calc": "Cálculo de costos de Mercado Libre (hecho por Nexo con código, cifras exactas)",
         "calc_rule": ("Usa EXACTAMENTE estas cifras: no recalcules ni cambies cargos, comisiones o envíos. "
                       "Interprétalas, explica los supuestos y recomienda. Si el usuario dio otros datos, "
@@ -93,9 +94,9 @@ _TEXT = {
                          "verificadas: no inventes comisiones ni cargos, pide los del simulador de costos."),
         "fragment": "fragmento",
         "web": "Resultados de búsqueda web",
-        "cite": ("Usa estas fuentes cuando sean pertinentes y cítalas en línea como [D1] o [W2]. "
+        "cite": ("Usa estas fuentes cuando sean pertinentes y cítalas en línea como [D1], [W2] o [N1]. "
                  "No inventes datos que no estén en las fuentes; si no alcanzan, dilo."),
-        "synth_cite": "Conserva las citas [D#]/[W#] de los especialistas.",
+        "synth_cite": "Conserva las citas [D#]/[W#]/[N#] de los especialistas.",
         "web_failed": "No se pudo completar la búsqueda web",
         "tools_hint": ("Tienes herramientas para buscar información. Úsalas cuando necesites datos que no "
                        "conoces con certeza y cita las fuentes devueltas como [D#] o [W#]."),
@@ -139,6 +140,7 @@ _TEXT = {
         "synth_inputs": "Specialist contributions",
         "synth_task": "Write the integrated final answer in markdown.",
         "docs": "Documents attached by the user (relevant excerpts)",
+        "notes": "The user's notes (personal memory, via Neuromapa)",
         "calc": "Mercado Libre cost calculation (computed by Nexo in code, exact figures)",
         "calc_rule": ("Use EXACTLY these figures: do not recompute or change fees, commissions or shipping. "
                       "Interpret them, explain the assumptions and recommend."),
@@ -147,9 +149,9 @@ _TEXT = {
                          "figures: do not invent commissions or fees."),
         "fragment": "excerpt",
         "web": "Web search results",
-        "cite": ("Use these sources when relevant and cite them inline as [D1] or [W2]. "
+        "cite": ("Use these sources when relevant and cite them inline as [D1], [W2] or [N1]. "
                  "Do not invent facts not supported by the sources; say so if they are insufficient."),
-        "synth_cite": "Keep the specialists' [D#]/[W#] citations.",
+        "synth_cite": "Keep the specialists' [D#]/[W#]/[N#] citations.",
         "web_failed": "Web search could not be completed",
         "tools_hint": ("You have search tools. Use them when you need facts you are not sure about and cite "
                        "the returned sources as [D#] or [W#]."),
@@ -267,7 +269,8 @@ class Orchestrator:
                  embedder: Optional[Embedder] = None,
                  tool_mode: str = "prefetch",
                  review: bool = False,
-                 followups: bool = True):
+                 followups: bool = True,
+                 notes: Optional[Any] = None):
         if not agents:
             raise ValueError("Se requiere al menos un agente")
         self.agents = agents
@@ -287,6 +290,9 @@ class Orchestrator:
         self.embedder = embedder
         self.native_tools = tool_mode == "native" and bool(self.documents or web_search_config)
         self.doc_snippets: List[Dict[str, Any]] = []
+        # Memoria (Neuromapa): objeto con search/read/start/end; None = sin notas
+        self.notes = notes
+        self.note_snippets: List[Dict[str, Any]] = []
         self.web_sources: List[Dict[str, Any]] = []
         self._prefetched = False
         self._prefetch_lock = asyncio.Lock()
@@ -321,6 +327,10 @@ class Orchestrator:
 
     def _context_block(self) -> str:
         parts = [self.calculation] if self.calculation else []
+        if self.note_snippets:
+            parts.append(f"## {self._t['notes']}")
+            parts += [f"[{n['label']}] {n['titulo']} ({n['ruta']}:{n['linea']}):\n{n['contenido']}"
+                      for n in self.note_snippets]
         if self.doc_snippets:
             parts.append(f"## {self._t['docs']}")
             parts += [f"[{d['label']}] {d['name']} ({self._t['fragment']} {d['chunk']}):\n{d['content']}"
@@ -459,6 +469,8 @@ class Orchestrator:
         started = time.monotonic()
         await self.emit({"type": "agent_start", "agent_id": spec.id, "agent": spec.name, "step": step,
                          "total": len(self.agents), "timestamp": _now()})
+        if self.notes and self.note_snippets:
+            await self.notes.read(spec.id, [n["ruta"] for n in self.note_snippets])
         buffer = _TokenBuffer(self.emit, "agent_token", spec.id)
         thinking = _TokenBuffer(self.emit, "thinking", spec.id)
         chunks: List[str] = []
@@ -605,7 +617,9 @@ class Orchestrator:
         docs = [{"label": d["label"], "kind": "document", "title": d["name"], "document_id": d["document_id"],
                  "chunk": d["chunk"]} for d in self.doc_snippets]
         web = [{"label": w["label"], "kind": "web", "title": w["title"], "url": w["url"]} for w in self.web_sources]
-        return docs + web
+        notes = [{"label": n["label"], "kind": "note", "title": n["titulo"], "path": n["ruta"], "line": n["linea"]}
+                 for n in self.note_snippets]
+        return notes + docs + web
 
     def _calc_for_inputs(self) -> str:
         return f"{self.calculation}\n\n" if self.calculation else ""
@@ -628,6 +642,16 @@ class Orchestrator:
             self.calculation = f"## {self._t['calc']}\n{self._t['calc_missing']}"
         elif reason.startswith("pais:"):
             self.calculation = f"## {self._t['calc']}\n" + self._t["calc_country"].format(country=reason[5:])
+
+    async def _prepare_notes(self, task: str) -> None:
+        """Las notas del usuario que tocan la consulta, como contexto citable [N#]."""
+        if not self.notes:
+            return
+        query = " ".join([m["content"] for m in self.history if m["role"] == "user"][-1:] + [task])
+        found = await self.notes.search(query)
+        self.note_snippets = [{**n, "label": f"N{i}"} for i, n in enumerate(found, 1)]
+        if self.note_snippets:
+            await self.emit({"type": "context_ready", "sources": self.sources(), "timestamp": _now()})
 
     async def _ensure_prefetch(self, task: str) -> None:
         async with self._prefetch_lock:
@@ -661,7 +685,10 @@ class Orchestrator:
                          "review": self.review,
                          "web_search": bool(self.web_search_config), "documents": len(self.documents),
                          "tool_mode": "native" if self.native_tools else "prefetch", "timestamp": _now()})
+        if self.notes:
+            await self.notes.start(len(task))
         await self._prepare_calculation(task)
+        await self._prepare_notes(task)
         if not self.native_tools:
             await self._ensure_prefetch(task)
 
@@ -695,5 +722,7 @@ class Orchestrator:
         summary.update({"usage": self.usage.as_dict(), "failed": [r.spec.id for r in done if r.error],
                         "has_synthesis": self.synthesis is not None, "sources": self.sources(),
                         "has_review": self.review_text is not None, "followups": self.followups})
+        if self.notes:
+            await self.notes.end()
         await self.emit({"type": "pipeline_complete", "data": summary, "timestamp": _now()})
         return summary

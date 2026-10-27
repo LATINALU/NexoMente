@@ -238,6 +238,7 @@ export function useChatSession() {
       followups: options.followups,
       toolMode: options.toolMode,
       reasoning: options.reasoning,
+      notes: options.notes,
       history,
       agentInstructions: instructions,
       documents: attachments.map((d) => d.id),

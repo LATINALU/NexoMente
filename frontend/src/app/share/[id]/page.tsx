@@ -44,7 +44,7 @@ export default function SharedConversationPage() {
         <a href="/" className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/favicon.svg" alt="" className="h-9 w-9 rounded-lg" />
-          <span className="font-black text-lg bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Nexo</span>
+          <span className="font-black text-lg bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">NexoMente</span>
         </a>
         {data && (
           <button onClick={importConversation}
@@ -104,7 +104,7 @@ export default function SharedConversationPage() {
               </section>
             ))}
             <p className="text-center text-xs text-muted-foreground mt-12">
-              Generado con <a href="/" className="text-primary hover:underline">Nexo</a> · Las respuestas de IA pueden contener errores.
+              Generado con <a href="/" className="text-primary hover:underline">NexoMente</a> · Las respuestas de IA pueden contener errores.
             </p>
           </>
         )}

@@ -25,7 +25,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Nexo · Equipos de agentes IA",
+  title: "NexoMente · Agentes IA con memoria",
   description: "500 agentes de IA especializados que trabajan en equipo: streaming en vivo, documentos, búsqueda web y respuestas integradas con fuentes citadas.",
   manifest: "/manifest.json",
   icons: {
