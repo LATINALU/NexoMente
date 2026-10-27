@@ -242,17 +242,27 @@ def aprender_de(datos):
     return valor
 
 
+def fuente_de_la_app(fuentes):
+    """NexoMente guarda sus notas en NEUROMAPA_NOTAS_APP: se suman como una fuente más (si la config no la tiene)."""
+    carpeta = os.environ.get("NEUROMAPA_NOTAS_APP", "").strip()
+    if not carpeta or any(f["id"] == "nexo" for f in fuentes):
+        return []
+    return [{"id": "nexo", "nombre": "NexoMente", "color": "#7950F2",
+             "raices": [(os.path.abspath(os.path.expanduser(carpeta)), False, "")]}]
+
+
 def armar(datos, base):
     if not isinstance(datos, dict):
         raise ConfigInvalida("la configuración tiene que ser un objeto JSON")
     if not isinstance(datos.get("usuario", ""), str):
         raise ConfigInvalida("usuario tiene que ser un texto")
+    fuentes = fuentes_de(datos, base)
     return {
         "datos": Path(base),
         "usuario": datos.get("usuario", ""),
         "lobulos": rotulos_de(datos),
         "alias_rutas": alias_de(datos, base),
-        "fuentes": fuentes_de(datos, base),
+        "fuentes": fuentes + fuente_de_la_app(fuentes),
         "proyectos": proyectos_de(datos, base),
         "podar": textos(datos.get("podar", PODAR), "podar", True),
         "podar_si_contiene": textos(datos.get("podar_si_contiene"), "podar_si_contiene", True),

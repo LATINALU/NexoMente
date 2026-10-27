@@ -6,7 +6,7 @@
  */
 
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, Brain, ChevronLeft, Download, Layers, LayoutList, Link2, Menu, Save, Wifi, WifiOff, X } from "lucide-react";
+import { AlertCircle, ArrowDown, Brain, BrainCircuit, ChevronLeft, Download, Layers, LayoutList, Link2, Menu, Save, Wifi, WifiOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { siblingsOf } from "@/lib/chat";
 import { useSettings } from "@/stores/settings";
@@ -19,6 +19,7 @@ import { ShareDialog } from "@/components/ShareDialog";
 import { useChatSession } from "./useChatSession";
 import { useRunTitle } from "./useRunTitle";
 import { BrainPanel } from "@/features/mente/BrainPanel";
+import { BrainStage } from "@/features/mente/BrainStage";
 import { menteEstado } from "@/lib/mente";
 import { onChatCommand } from "./commands";
 import { Composer, ComposerHandle } from "./components/Composer";
@@ -58,6 +59,8 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
   // Cerebro (Neuromapa): solo si la memoria está habilitada en esta instalación
   const [menteLista, setMenteLista] = useState(false);
   const [showBrain, setShowBrain] = useState(false);
+  // Modo Cerebro: el mapa ocupa la escena y los expertos se ven pensando adentro
+  const [brainMode, setBrainMode] = useState(false);
   useEffect(() => {
     menteEstado().then((e) => setMenteLista(e.habilitada && e.disponible));
   }, []);
@@ -203,6 +206,12 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
                   <Link2 className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">Compartir</span>
                 </Button>
                 {menteLista && (
+                  <Button size="sm" variant="ghost" onClick={() => setBrainMode(!brainMode)} title={brainMode ? "Volver a la conversación" : "Modo Cerebro: preguntale al cerebro y mirá a los expertos pensar adentro"}
+                    className={cn("text-xs gap-1", brainMode && "bg-primary/10 text-primary")}>
+                    <BrainCircuit className="h-3.5 w-3.5" /><span className="hidden xl:inline">Modo Cerebro</span>
+                  </Button>
+                )}
+                {menteLista && !brainMode && (
                   <Button size="sm" variant="ghost" onClick={toggleBrain} title={showBrain ? "Ocultar el cerebro" : "Ver el cerebro: tus notas y lo que leen los agentes"}
                     className={cn("p-0 h-8 w-8", showBrain && "bg-primary/10 text-primary")}>
                     <Brain className="h-4 w-4" />
@@ -222,6 +231,16 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
 
           <TeamBar />
 
+          {brainMode && menteLista ? (
+            <BrainStage
+              turn={path[path.length - 1]}
+              run={session.pendingTurnId && session.pendingTurnId === path[path.length - 1]?.id ? run : null}
+              pending={!!session.pendingTurnId && session.pendingTurnId === path[path.length - 1]?.id}
+              conversationId={session.conversationId}
+              canRemember={menteLista}
+              onExit={() => setBrainMode(false)}
+            />
+          ) : (
           <div className="flex-1 overflow-y-auto p-4" ref={scrollRef} onScroll={onScroll}>
             <div className="max-w-5xl mx-auto">
               {session.error && (
@@ -247,6 +266,7 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
                     processing={processing}
                     run={session.pendingTurnId === turn.id ? run : null}
                     conversationId={session.conversationId}
+                    canRemember={menteLista}
                     onEdit={session.editTurn}
                     onSwitchBranch={session.switchBranch}
                     onRegenerate={session.regenerate}
@@ -257,7 +277,9 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
             </div>
           </div>
 
-          {awayFromBottom && path.length > 0 && (
+          )}
+
+          {!brainMode && awayFromBottom && path.length > 0 && (
             <div className="relative">
               <button onClick={() => scrollToBottom(true)}
                 className="absolute -top-14 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-card/95 px-3 py-1.5 text-xs font-semibold text-primary shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 hover:bg-primary/10">
@@ -289,7 +311,7 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
         <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} path={path}
           title={path[0]?.user.content.slice(0, 80) || "Conversación de Nexo"} />
 
-        {!mobile && showBrain && <BrainPanel onClose={() => setShowBrain(false)} className="w-[420px] 2xl:w-[560px] shrink-0" />}
+        {!mobile && showBrain && !brainMode && <BrainPanel onClose={() => setShowBrain(false)} className="w-[420px] 2xl:w-[560px] shrink-0" />}
 
         {!mobile && showTasks && <TaskSelector onSelect={setAgents} className="h-full shrink-0" header={sidePanelHeader} />}
 

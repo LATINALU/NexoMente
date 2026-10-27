@@ -9,8 +9,11 @@ Neuromapa (carpeta neuromapa/, Python estándar) es la memoria de NexoMente:
 - salud(): el resumen del médico (datos viejos, enlaces rotos…).
 - abrir_mapa(): levanta el servidor del mapa (si no está) y devuelve una dirección de un solo uso
   para incrustarlo en la app.
+- guardar_nota(): lo que el usuario decide recordar de una respuesta se guarda como nota en su propia
+  carpeta (datos-mente/notas), que Neuromapa suma como la fuente «NexoMente», enlazada a las notas citadas.
 
-Todo es local: Neuromapa nunca sale de la computadora y no escribe en tus notas.
+Todo es local: Neuromapa nunca sale de la computadora. Las únicas notas que se escriben son las de
+NexoMente, en su carpeta: las tuyas (memoria de Claude Code, CLAUDE.md…) solo se leen.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ logger = logging.getLogger("nexo.mente")
 RAIZ = Path(__file__).resolve().parents[3]
 NEUROMAPA = Path(os.environ.get("NEXOMENTE_NEUROMAPA") or RAIZ / "neuromapa").resolve()
 DATOS = Path(os.environ.get("NEXOMENTE_DATOS") or RAIZ / "datos-mente").resolve()
+NOTAS = Path(os.environ.get("NEXOMENTE_NOTAS") or DATOS / "notas").resolve()
 # Orígenes que pueden incrustar el mapa (la app web). Solo direcciones locales.
 ORIGENES_APP = os.environ.get("NEXOMENTE_ORIGENES", "http://localhost:3000 http://127.0.0.1:3000")
 
@@ -61,6 +65,7 @@ def _preparar() -> None:
             raise MenteNoDisponible(f"No se encontró Neuromapa en {NEUROMAPA}")
         DATOS.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("CLAUDE_PLUGIN_OPTION_CARPETA_DATOS", str(DATOS))
+        os.environ.setdefault("NEUROMAPA_NOTAS_APP", str(NOTAS))
         if str(NEUROMAPA) not in sys.path:
             sys.path.insert(0, str(NEUROMAPA))
         _importado = True
@@ -155,6 +160,134 @@ def _seguro(accion) -> None:
         accion()
     except Exception as e:  # pragma: no cover - depende del disco
         logger.info("No se pudo anotar en Neuromapa: %s", e)
+
+
+# ------------------------------------------------------------ notas propias
+
+MAX_TITULO = 120
+MAX_CONTENIDO = 60_000
+MAX_FUENTES = 20
+INDICE_NOTAS = "MEMORY.md"
+
+
+def _slug(texto: str) -> str:
+    import unicodedata
+    plano = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii").lower()
+    return re.sub(r"[^a-z0-9]+", "-", plano).strip("-")[:60] or "nota"
+
+
+def _una_linea(texto: str, largo: int) -> str:
+    return re.sub(r"\s+", " ", texto or "").strip()[:largo]
+
+
+def _huella(contenido: str) -> str:
+    return hashlib.sha1(contenido.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _rutas_propias() -> List[Path]:
+    """Las notas de NexoMente, de la más nueva a la más vieja (sin el índice)."""
+    if not NOTAS.is_dir():
+        return []
+    rutas = [r for r in NOTAS.glob("*.md") if r.name.lower() != INDICE_NOTAS.lower()]
+    return sorted(rutas, key=lambda r: r.stat().st_mtime, reverse=True)
+
+
+def _titulo_de(ruta: Path) -> str:
+    try:
+        cabeza = ruta.read_text(encoding="utf-8", errors="replace")[:1500]
+    except OSError:
+        return ruta.stem
+    return next((l[2:].strip() for l in cabeza.splitlines() if l.startswith("# ")), ruta.stem)
+
+
+def _escribir_indice_notas() -> None:
+    """MEMORY.md de la carpeta: el médico de Neuromapa da por huérfana a una nota a la que no llega ningún índice."""
+    from archivos import escribir_atomico  # noqa: E402
+    renglones = ["# NexoMente", "", "Respuestas que guardaste desde Nexo (la más nueva primero).", ""]
+    for ruta in _rutas_propias():
+        fecha = time.strftime("%Y-%m-%d", time.localtime(ruta.stat().st_mtime))
+        titulo = _titulo_de(ruta).replace("[", "(").replace("]", ")")
+        renglones.append(f"- [{titulo}]({ruta.name}) — {fecha}")
+    escribir_atomico(NOTAS / INDICE_NOTAS, "\n".join(renglones) + "\n")
+
+
+def _ya_guardada(huella: str) -> Optional[Path]:
+    """La misma respuesta guardada dos veces es una sola nota."""
+    marca = f"huella: {huella}"
+    for ruta in _rutas_propias():
+        try:
+            if marca in ruta.read_text(encoding="utf-8", errors="replace")[:1500]:
+                return ruta
+        except OSError:
+            continue
+    return None
+
+
+def _enlace(ruta: str) -> Optional[str]:
+    """Enlace Markdown a una nota citada (ruta absoluta: Neuromapa lo dibuja como conexión)."""
+    camino = Path(ruta)
+    if camino.suffix.lower() != ".md" or not camino.is_absolute() or not camino.is_file():
+        return None
+    titulo = _una_linea(camino.stem, 80).replace("[", "(").replace("]", ")")
+    return f"- [{titulo}](<{camino}>)"
+
+
+def _yaml(texto: str) -> str:
+    return json.dumps(texto, ensure_ascii=False)
+
+
+def guardar_nota(titulo: str, contenido: str, fuentes: Optional[List[str]] = None, pregunta: str = "",
+                 conversacion: str = "") -> Dict[str, Any]:
+    """Guarda una respuesta como nota de NexoMente: {ruta, titulo, nueva}. Bloqueante."""
+    _preparar()
+    titulo = _una_linea(titulo, MAX_TITULO)
+    contenido = (contenido or "").strip()[:MAX_CONTENIDO]
+    if not titulo or not contenido:
+        raise ValueError("La nota necesita título y contenido")
+    huella = _huella(contenido)
+    with _lock:
+        NOTAS.mkdir(parents=True, exist_ok=True)
+        existente = _ya_guardada(huella)
+        if existente:
+            _escribir_indice_notas()
+            return {"ruta": str(existente), "titulo": titulo, "nueva": False}
+        ahora = time.localtime()
+        base = f"{time.strftime('%Y-%m-%d', ahora)}-{_slug(titulo)}"
+        ruta = NOTAS / f"{base}.md"
+        n = 2
+        while ruta.exists():
+            ruta, n = NOTAS / f"{base}-{n}.md", n + 1
+        enlaces = list(dict.fromkeys(e for e in (_enlace(f) for f in (fuentes or [])[:MAX_FUENTES]) if e))
+        partes = ["---", f"name: {_yaml(ruta.stem)}", f"description: {_yaml(titulo)}", "metadata:", "  type: nexo",
+                  f"  modified: {time.strftime('%Y-%m-%dT%H:%M:%S', ahora)}", f"  huella: {huella}", "---", "",
+                  f"# {titulo}", ""]
+        if pregunta.strip():
+            partes += [f"> {_una_linea(pregunta, 500)}", ""]
+        partes += [contenido, ""]
+        if enlaces:
+            partes += ["## Fuentes", "", *enlaces, ""]
+        from archivos import escribir_atomico  # noqa: E402
+        escribir_atomico(ruta, "\n".join(partes))
+        _escribir_indice_notas()
+    _refrescar_indice()
+    if conversacion:
+        _seguro(lambda: _escribir([_evento(sesion_de(conversacion), "post", "crear", h="Write", f=str(ruta)[:300],
+                                           a="nexo", at="nexo")]))
+    return {"ruta": str(ruta), "titulo": titulo, "nueva": True}
+
+
+def notas_propias(maximo: int = 50) -> List[Dict[str, Any]]:
+    """Las notas que guardó NexoMente, de la más nueva a la más vieja."""
+    return [{"ruta": str(r), "titulo": _titulo_de(r), "modificada": round(r.stat().st_mtime)}
+            for r in _rutas_propias()[:maximo]]
+
+
+def _refrescar_indice() -> None:
+    """El buscador guarda su índice 15 minutos: se descarta para que la nota nueva se encuentre ya."""
+    def borrar():
+        import buscador  # noqa: E402
+        buscador.ruta_del_indice().unlink(missing_ok=True)
+    _seguro(borrar)
 
 
 # --------------------------------------------------------------------- salud

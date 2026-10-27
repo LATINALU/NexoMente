@@ -111,3 +111,70 @@ def test_map_frame_policy_only_allows_local_origins():
     assert permitir("http://localhost:3000 http://127.0.0.1:3000") == "http://localhost:3000 http://127.0.0.1:3000"
     assert permitir("https://evil.example http://localhost:3000;") == "'none'"
     assert permitir("") == "'none'"
+
+
+def _mente_en(tmp_path, monkeypatch):
+    from app.services import mente
+    monkeypatch.setattr(mente, "NOTAS", tmp_path / "notas")
+    monkeypatch.setattr(mente, "_refrescar_indice", lambda: None)
+    return mente
+
+
+def test_saved_note_has_frontmatter_question_and_links_to_cited_notes(tmp_path, monkeypatch):
+    mente = _mente_en(tmp_path, monkeypatch)
+    citada = tmp_path / "precios.md"
+    citada.write_text("# Precios\n", encoding="utf-8")
+    hecho = mente.guardar_nota("¿Cuánto cuesta el termo?", "Cuesta 95 MXN [N1].",
+                               [str(citada), str(tmp_path / "no-existe.md"), "C:/x.txt"], pregunta="precio termo")
+    assert hecho["nueva"] is True
+    ruta = mente.NOTAS / hecho["ruta"].split("\\")[-1].split("/")[-1]
+    texto = ruta.read_text(encoding="utf-8")
+    assert ruta.name.endswith("-cuanto-cuesta-el-termo.md")
+    assert texto.startswith("---\nname: ") and "  type: nexo\n" in texto and "  huella: " in texto
+    assert "# ¿Cuánto cuesta el termo?" in texto and "> precio termo" in texto and "Cuesta 95 MXN [N1]." in texto
+    assert f"- [precios](<{citada}>)" in texto
+    assert "no-existe" not in texto and "x.txt" not in texto
+
+
+def test_saving_the_same_answer_twice_keeps_one_note(tmp_path, monkeypatch):
+    mente = _mente_en(tmp_path, monkeypatch)
+    a = mente.guardar_nota("Termo", "Cuesta 95 MXN.")
+    b = mente.guardar_nota("Otro título", "  Cuesta 95 MXN.  ")
+    c = mente.guardar_nota("Termo", "Cuesta 100 MXN.")
+    assert b == {"ruta": a["ruta"], "titulo": "Otro título", "nueva": False}
+    assert c["nueva"] and c["ruta"] != a["ruta"]
+    assert [n["titulo"] for n in mente.notas_propias()].count("Termo") == 2
+    indice = (mente.NOTAS / "MEMORY.md").read_text(encoding="utf-8")
+    assert indice.count("- [Termo](") == 2 and len(mente.notas_propias()) == 2
+
+
+def test_note_needs_title_and_content(tmp_path, monkeypatch):
+    import pytest
+    mente = _mente_en(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        mente.guardar_nota("   ", "algo")
+    with pytest.raises(ValueError):
+        mente.guardar_nota("Título", "  ")
+
+
+def test_notes_route_saves_and_lists(tmp_path, monkeypatch):
+    from starlette.testclient import TestClient
+    from app.main import app
+    _mente_en(tmp_path, monkeypatch)
+    cliente = TestClient(app)
+    r = cliente.post("/api/mente/notas", json={"titulo": "Plan", "contenido": "Hacer X."})
+    assert r.status_code == 200 and r.json()["nueva"] is True
+    assert cliente.get("/api/mente/notas").json()["notas"][0]["titulo"] == "Plan"
+    assert cliente.post("/api/mente/notas", json={"titulo": "Plan", "contenido": "   "}).status_code == 422
+
+
+def test_neuromapa_adds_the_app_notes_as_a_source(tmp_path, monkeypatch):
+    from app.services import mente
+    mente._preparar()
+    import configuracion
+    monkeypatch.setenv("NEUROMAPA_NOTAS_APP", str(tmp_path))
+    fuente = configuracion.fuente_de_la_app([{"id": "memoria"}])
+    assert fuente[0]["id"] == "nexo" and fuente[0]["raices"][0][0] == str(tmp_path)
+    assert configuracion.fuente_de_la_app([{"id": "nexo"}]) == []
+    monkeypatch.delenv("NEUROMAPA_NOTAS_APP")
+    assert configuracion.fuente_de_la_app([]) == []

@@ -36,12 +36,16 @@ http://localhost:3000). En la app: **Ajustes → APIs & Modelos** para elegir el
 |---|---|
 | 🧠 **Usar mis notas** | Opción en ⚙ del chat (activada de fábrica). Antes de los agentes, el buscador de Neuromapa (BM25 con raíces en español e inglés) elige las notas que tocan la consulta y los agentes las reciben como contexto citable **[N#]**. |
 | 🗺️ **Cerebro en vivo** | Botón 🧠 del chat: el mapa 3D de Neuromapa dentro de la app. Cada agente de NexoMente aparece leyendo sus notas, igual que Claude Code. |
+| ✨ **Modo Cerebro** | Botón *Modo Cerebro* del chat: el mapa 3D ocupa la escena. La pregunta flota arriba, cada experto elegido es una **luz** que nace en el centro, viaja por el cerebro hasta las notas que lee (encendiéndolas, con estelas entre una y otra), late mientras escribe y vuelve al centro al terminar; el núcleo late mientras el Coordinador integra y la respuesta se arma abajo. La app le pasa al mapa solo quién trabaja y qué notas lee (por `postMessage`, desde orígenes locales): el texto de la pregunta y de la respuesta no entra al mapa ni a su registro. |
+| 💾 **Recordar** | Botón debajo de cada respuesta: la guarda como nota en `datos-mente/notas/` (la respuesta integrada, o la de cada agente si no hay síntesis), con la pregunta y enlaces a las notas que citó. En el cerebro aparece como la fuente **NexoMente**, conectada a esas notas, y desde ahí los agentes la pueden citar en consultas futuras. Guardar dos veces la misma respuesta no la duplica. |
 | 🩺 **Médico** | El panel avisa notas con datos viejos: rutas que ya no existen, enlaces rotos, memorias que no entran en una lectura… |
 | 🔌 **Plugin de Claude Code** | `neuromapa/` sigue siendo el plugin de Claude Code: los hooks ven en vivo lo que hace Claude Code y le pasan contexto (ver `neuromapa/README.md`). |
 
 **Qué notas lee.** Sin configurar nada: la memoria de Claude Code (`~/.claude/projects/*/memory/`) y tus `CLAUDE.md`.
 Para sumar carpetas de notas o proyectos, escribí `datos-mente/config.json` (mismo formato que
 `neuromapa/demo/config.json`; ver `neuromapa/docs/como-funciona.md`).
+**Qué notas escribe.** Solo las suyas, en `datos-mente/notas/` (o `NEXOMENTE_NOTAS`), con su índice `MEMORY.md`:
+la memoria de Claude Code y tus `CLAUDE.md` solo se leen.
 
 **Privacidad.** Las rutas `/api/mente/*` solo responden desde esta computadora y están apagadas en producción
 (`NEXOMENTE_MENTE=on` para forzarlas). Los datos de la memoria (registro en vivo, índice, clave del mapa) quedan en

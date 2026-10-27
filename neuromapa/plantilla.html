@@ -1075,6 +1075,31 @@ body.anonimo #bloque-salud, body.anonimo #bloque-aprendido, body.anonimo #result
   .repite-franja { width: 200px; }
   .ausencia-cifras dd { font-size: 18px; }
 }
+.nexo-capa { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; transition: opacity .3s; }
+.nexo-capa.oculta { opacity: 0; }
+.nexo-luz { position: absolute; left: 0; top: 0; will-change: transform; transition: opacity .9s; }
+.nexo-orbe { position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 15px; line-height: 1; background: radial-gradient(circle, color-mix(in srgb, var(--c) 55%, transparent), transparent 70%);
+  box-shadow: 0 0 14px 4px color-mix(in srgb, var(--c) 70%, transparent), inset 0 0 8px var(--c); }
+.nexo-nombre { position: absolute; left: 18px; top: -9px; white-space: nowrap; font: 600 11px/1.4 system-ui, sans-serif; color: var(--c);
+  text-shadow: 0 0 6px #000, 0 0 2px #000; opacity: .9; }
+.nexo-luz[data-estado="espera"] .nexo-orbe { opacity: .55; transform: scale(.75); }
+.nexo-luz[data-estado="piensa"] .nexo-orbe { animation: nexo-piensa 1.6s ease-in-out infinite; }
+.nexo-luz[data-estado="escribe"] .nexo-orbe { animation: nexo-escribe .55s ease-in-out infinite alternate; }
+.nexo-luz[data-estado="listo"] { opacity: 0; transition-delay: .9s; }
+.nexo-luz[data-estado="listo"] .nexo-orbe { transform: scale(.5); transition: transform 1.1s; }
+.nexo-luz[data-estado="error"] { --c: #ef4444; opacity: 0; transition: opacity 1.6s .6s; }
+.nexo-nucleo { position: absolute; left: 0; top: 0; will-change: transform; }
+.nexo-nucleo::before { content: ''; position: absolute; left: -80px; top: -80px; width: 160px; height: 160px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, rgba(237, 233, 254, .85), rgba(167, 139, 250, .6) 22%, rgba(56, 189, 248, .2) 50%, transparent 70%); transition: opacity .6s; }
+.nexo-nucleo.late::before { opacity: 1; animation: nexo-late 1.1s ease-in-out infinite; }
+.nexo-nucleo.estalla::before { animation: nexo-estalla 1.6s ease-out forwards; }
+@keyframes nexo-piensa { 0%, 100% { transform: scale(.85); opacity: .75; } 50% { transform: scale(1.1); opacity: 1; } }
+@keyframes nexo-escribe { from { transform: scale(1); } to { transform: scale(1.3); } }
+@keyframes nexo-late { 0%, 100% { transform: scale(.8); } 50% { transform: scale(1.35); } }
+@keyframes nexo-estalla { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(4); } }
+body.nexo .pie-cine, body.nexo .zocalo, body.nexo .grabando-marca { display: none !important; }
+[data-anim="nada"] .nexo-orbe, [data-anim="nada"] .nexo-nucleo::before { animation: none !important; }
 </style>
 </head>
 <body>
@@ -13802,7 +13827,206 @@ body.anonimo #bloque-salud, body.anonimo #bloque-aprendido, body.anonimo #result
     }
   }
 
+  // NexoMente: la app (en el marco padre) manda la escena de cada consulta y acá los expertos son luces
+  // que nacen en el centro, viajan a las notas que leen (disparándolas), laten mientras escriben y vuelven
+  // al centro al terminar, donde se arma la respuesta. Solo dibuja: nunca contesta datos del mapa.
+  function iniciarNexo() {
+    if (window.parent === window) return;
+    const RE_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/;
+    const PALETA = ['#fde047', '#4ade80', '#38bdf8', '#f472b6', '#c084fc', '#fb7185', '#2dd4bf', '#fdba74'];
+    const ESTADOS = new Set(['espera', 'piensa', 'escribe', 'listo', 'error']);
+    const VIAJE_MS = 1100;
+    const POR_NOTA_MS = 1500;
+    const TOPE_EXPERTOS = 12;
+    const TOPE_NOTAS = 20;
+    let q = null;
+    try { q = new URLSearchParams(location.search); } catch (e) {}
+    if (q && q.has('nexo')) document.body.classList.add('nexo');
+
+    const capa = document.createElement('div');
+    capa.className = 'nexo-capa';
+    capa.setAttribute('aria-hidden', 'true');
+    const nucleo = document.createElement('div');
+    nucleo.className = 'nexo-nucleo';
+    capa.appendChild(nucleo);
+    centro.appendChild(capa);
+
+    const luces = new Map();
+    const apagadas = new Set();
+    let escenaId = '';
+    let notas = [];
+    let coordinador = 'no';
+    let bucle = 0;
+
+    const colorDeExperto = id => PALETA[hashTexto('nexo' + id) % PALETA.length];
+    const listo = () => completo() && graficoListo && estado.vista === 'grafo' && !!cerebro;
+
+    function centroPantalla() {
+      const p = proyectar(giro.cx, giro.cy, 0);
+      const t = transformacion;
+      return { x: p.x * t.k + t.x, y: p.y * t.k + t.y };
+    }
+
+    // Dónde está algo ahora (el cerebro gira): una nota visible o el centro
+    function puntoDe(ancla) {
+      if (ancla && ancla._visible && Number.isFinite(ancla._sx)) return { x: ancla._sx, y: ancla._sy };
+      return centroPantalla();
+    }
+
+    function nodoDe(ruta) {
+      const n = porRuta.get(normRuta(ruta));
+      return n && n._visible ? n : null;
+    }
+
+    function crearLuz(e, orden) {
+      const el = document.createElement('div');
+      el.className = 'nexo-luz';
+      const color = colorDeExperto(e.id);
+      el.style.setProperty('--c', color);
+      const emoji = document.createElement('span');
+      emoji.className = 'nexo-orbe';
+      const nombre = document.createElement('span');
+      nombre.className = 'nexo-nombre';
+      el.append(emoji, nombre);
+      capa.appendChild(el);
+      return { id: e.id, el, emoji, nombre, color, estado: 'espera', orden, ang: orden * 2.4, cola: [], visitadas: 0,
+               desde: null, hacia: null, t0: performance.now(), dur: 1, x: NaN, y: NaN, fin: 0 };
+    }
+
+    function ir(luz, hacia, dur) {
+      luz.desde = { x: luz.x, y: luz.y };
+      luz.hacia = hacia;
+      luz.t0 = performance.now();
+      luz.dur = dur;
+    }
+
+    function llegar(luz, n) {
+      if (!n || !listo() || introCorriendo()) return;
+      const ahora = performance.now();
+      anim.efectos.push({ tipo: 'aro', n, t0: ahora, dur: 1800, color: luz.color });
+      anim.efectos.push({ tipo: 'aro', n, t0: ahora + 180, dur: 1600, color: luz.color, guion: true });
+      if (luz.anterior && luz.anterior !== n) viajar(luz.anterior, n, luz.color, 840);
+      if (luz.visitadas === 1) disparar(n); else descargar(n, 0.8);
+      luz.anterior = n;
+      programarCuadro();
+    }
+
+    function aplicar(escena) {
+      if (!escena || typeof escena !== 'object') return;
+      const id = String(escena.id || '').slice(0, 80);
+      if (id !== escenaId) {
+        luces.forEach(l => l.el.remove());
+        luces.clear();
+        apagadas.clear();
+        escenaId = id;
+        nucleo.className = 'nexo-nucleo';
+      }
+      notas = (Array.isArray(escena.notas) ? escena.notas : []).slice(0, TOPE_NOTAS).map(r => String(r).slice(0, 1000));
+      const expertos = (Array.isArray(escena.expertos) ? escena.expertos : []).slice(0, TOPE_EXPERTOS);
+      const activa = escena.activa === true;
+      expertos.forEach((e, i) => {
+        if (!e || typeof e.id !== 'string') return;
+        let luz = luces.get(e.id);
+        if (!luz) {
+          if (!activa || apagadas.has(e.id)) return;
+          luz = crearLuz(e, i);
+          luces.set(e.id, luz);
+        }
+        luz.emoji.textContent = String(e.emoji || '🤖').slice(0, 4);
+        luz.nombre.textContent = String(e.nombre || e.id).slice(0, 40);
+        const nuevo = ESTADOS.has(e.estado) ? e.estado : 'espera';
+        if (nuevo !== luz.estado) cambiar(luz, nuevo);
+      });
+      if (!activa) luces.forEach(l => { if (l.estado !== 'listo' && l.estado !== 'error') cambiar(l, 'listo'); });
+      const coord = ['no', 'escribe', 'listo'].includes(escena.coordinador) ? escena.coordinador : 'no';
+      if (coord !== coordinador) {
+        coordinador = coord;
+        nucleo.className = 'nexo-nucleo' + (coord === 'escribe' ? ' late' : coord === 'listo' ? ' estalla' : '');
+        if (coord === 'listo') responder();
+      }
+      if (!activa && coord !== 'escribe') setTimeout(() => { if (escenaId === id) nucleo.className = 'nexo-nucleo'; }, 2400);
+      arrancar();
+    }
+
+    function cambiar(luz, nuevo) {
+      luz.estado = nuevo;
+      luz.el.dataset.estado = nuevo;
+      if (nuevo === 'piensa' || nuevo === 'escribe') {
+        if (!luz.cola.length && !luz.visitadas) {
+          const propias = notas.map(nodoDe).filter(Boolean);
+          const corte = propias.length ? luz.orden % propias.length : 0;
+          luz.cola = propias.slice(corte).concat(propias.slice(0, corte));
+          luz.t0 = performance.now() + luz.orden * 450;
+          luz.dur = 1;
+        }
+      } else if (nuevo === 'listo' || nuevo === 'error') {
+        luz.cola = [];
+        ir(luz, null, VIAJE_MS);
+        luz.fin = performance.now() + VIAJE_MS + (nuevo === 'error' ? 1200 : 900);
+      }
+    }
+
+    // La respuesta sale del cerebro: las notas más leídas se encienden juntas
+    function responder() {
+      if (!listo() || introCorriendo()) return;
+      const leidas = [...new Set([...luces.values()].map(l => l.anterior).filter(Boolean))];
+      leidas.slice(0, 3).forEach((n, i) => setTimeout(() => descargar(n, 1), i * 220));
+      programarCuadro();
+    }
+
+    function arrancar() {
+      if (!bucle && (luces.size || coordinador !== 'no')) bucle = requestAnimationFrame(paso);
+    }
+
+    function paso(ahora) {
+      bucle = 0;
+      const visible = listo();
+      capa.classList.toggle('oculta', !visible);
+      const c = centroPantalla();
+      nucleo.style.transform = 'translate(' + c.x.toFixed(1) + 'px,' + c.y.toFixed(1) + 'px)';
+      for (const luz of [...luces.values()]) {
+        if (luz.fin && ahora > luz.fin) {
+          luz.el.remove();
+          luces.delete(luz.id);
+          apagadas.add(luz.id);
+          continue;
+        }
+        if (!Number.isFinite(luz.x)) { luz.x = c.x; luz.y = c.y; }
+        const activa = luz.estado === 'piensa' || luz.estado === 'escribe';
+        if (activa && ahora - luz.t0 >= luz.dur && luz.cola.length) {
+          ir(luz, luz.cola.shift(), luz.visitadas ? POR_NOTA_MS : VIAJE_MS);
+          luz.visitadas++;
+          luz.llego = false;
+        }
+        const u = Math.max(0, Math.min(1, (ahora - luz.t0) / luz.dur));
+        const s = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+        const meta = puntoDe(luz.hacia);
+        // Ronda alrededor de su ancla: en espera, cerca del centro; trabajando, sobre su nota
+        luz.ang += luz.estado === 'escribe' ? 0.045 : 0.018;
+        const radio = luz.estado === 'espera' ? 46 + luz.orden * 9 : activa ? (luz.hacia ? 18 : 34 + luz.orden * 10) : 0;
+        const ox = Math.cos(luz.ang) * radio;
+        const oy = Math.sin(luz.ang) * radio * 0.6;
+        const desde = luz.desde || meta;
+        luz.x = desde.x + (meta.x + ox - desde.x) * s;
+        luz.y = desde.y + (meta.y + oy - desde.y) * s;
+        if (u >= 1) luz.desde = null;
+        if (u >= 1 && luz.hacia && !luz.llego) { luz.llego = true; llegar(luz, luz.hacia); }
+        luz.el.style.transform = 'translate(' + luz.x.toFixed(1) + 'px,' + luz.y.toFixed(1) + 'px)';
+      }
+      if (luces.size || coordinador === 'escribe') bucle = requestAnimationFrame(paso);
+    }
+
+    window.addEventListener('message', ev => {
+      if (ev.source !== window.parent || !RE_LOCAL.test(ev.origin)) return;
+      const d = ev.data;
+      if (d && d.nexo === 'escena') aplicar(d.escena);
+    });
+    // Avisa que ya escucha (sin datos): la app manda la escena actual
+    window.parent.postMessage({ nexo: 'listo' }, '*');
+  }
+
   iniciarVivo();
+  iniciarNexo();
 })();
 </script>
 </body>

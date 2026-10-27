@@ -30,3 +30,24 @@ export const menteSalud = async (): Promise<MenteSalud> => fetch("/api/mente/sal
 /** Dirección de un solo uso del mapa en vivo (levanta su servidor si hace falta). */
 export const menteMapa = async (): Promise<string> =>
   fetch("/api/mente/mapa", { method: "POST" }).then((r) => json<{ url: string }>(r)).then((d) => d.url);
+
+export interface NotaGuardada {
+  ruta: string;
+  titulo: string;
+  /** false: esa misma respuesta ya estaba guardada. */
+  nueva: boolean;
+}
+
+/** Guarda una respuesta como nota de NexoMente, enlazada a las notas que citó. */
+export const menteGuardar = async (nota: {
+  titulo: string;
+  contenido: string;
+  fuentes?: string[];
+  pregunta?: string;
+  conversacion?: string;
+}): Promise<NotaGuardada> =>
+  fetch("/api/mente/notas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(nota),
+  }).then((r) => json<NotaGuardada>(r));

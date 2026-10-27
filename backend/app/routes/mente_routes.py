@@ -7,8 +7,10 @@ apagadas en producción salvo NEXOMENTE_MENTE=on explícito.
 
 import asyncio
 import os
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from app.config import IS_PRODUCTION
 from app.services import mente
@@ -64,3 +66,31 @@ async def mapa(request: Request):
         return {"url": await asyncio.to_thread(mente.abrir_mapa)}
     except (mente.MenteNoDisponible, OSError) as e:
         raise HTTPException(status_code=503, detail=f"No se pudo abrir el mapa: {e}")
+
+
+class NotaNueva(BaseModel):
+    titulo: str = Field(..., min_length=1, max_length=500)
+    contenido: str = Field(..., min_length=1, max_length=200_000)
+    fuentes: List[str] = Field(default_factory=list, max_length=50)
+    pregunta: str = Field("", max_length=20_000)
+    conversacion: str = Field("", max_length=200)
+
+
+@router.get("/notas")
+async def notas(request: Request, maximo: int = Query(50, ge=1, le=200)):
+    """Las notas que guardó NexoMente (las tuyas solo se leen)."""
+    _exigir_local(request)
+    return {"notas": await asyncio.to_thread(mente.notas_propias, maximo)}
+
+
+@router.post("/notas")
+async def guardar(request: Request, nota: NotaNueva):
+    """Guarda una respuesta en la memoria: nota nueva en datos-mente/notas, enlazada a las notas que citó."""
+    _exigir_local(request)
+    try:
+        return await asyncio.to_thread(mente.guardar_nota, nota.titulo, nota.contenido, nota.fuentes, nota.pregunta,
+                                       nota.conversacion)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except (mente.MenteNoDisponible, OSError) as e:
+        raise HTTPException(status_code=503, detail=f"No se pudo guardar la nota: {e}")

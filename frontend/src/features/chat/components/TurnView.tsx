@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { AnswerCard } from "./AnswerCard";
 import { LiveRun } from "./LiveRun";
 import { SourcesList } from "./SourcesList";
+import { SaveToMind } from "@/features/mente/SaveToMind";
 import { MAX_INPUT } from "../useChatSession";
 
 interface TurnViewProps {
@@ -19,6 +20,8 @@ interface TurnViewProps {
   processing: boolean;
   run: RunState | null;
   conversationId: string;
+  /** La memoria (Neuromapa) está lista: se puede guardar la respuesta como nota */
+  canRemember?: boolean;
   onEdit: (turnId: string, text: string) => void;
   onSwitchBranch: (turn: Turn, direction: -1 | 1) => void;
   onRegenerate: () => void;
@@ -26,7 +29,7 @@ interface TurnViewProps {
 }
 
 function TurnViewImpl({
-  turn, siblings, isLast, isPending, processing, run, conversationId, onEdit, onSwitchBranch, onRegenerate, onFollowUp,
+  turn, siblings, isLast, isPending, processing, run, conversationId, canRemember, onEdit, onSwitchBranch, onRegenerate, onFollowUp,
 }: TurnViewProps) {
   const [draft, setDraft] = useState<string | null>(null);
   const position = siblings.findIndex((s) => s.id === turn.id);
@@ -104,7 +107,7 @@ function TurnViewImpl({
         </div>
       )}
 
-      {!isPending && (turn.stats || isLast) && (
+      {!isPending && (turn.stats || isLast || canRemember) && (
         <div className="flex flex-wrap items-center justify-center gap-3 mb-8 text-xs text-muted-foreground">
           {turn.stats && (
             <span>
@@ -115,6 +118,7 @@ function TurnViewImpl({
               {turn.stats.cost != null && turn.stats.cost > 0 && ` · ${formatUSD(turn.stats.cost)}`}
             </span>
           )}
+          {canRemember && turn.answers.length > 0 && <SaveToMind turn={turn} conversationId={conversationId} />}
           {isLast && !processing && (
             <button onClick={onRegenerate} className="inline-flex items-center gap-1 hover:text-primary transition-colors" title="Crear otra versión de esta respuesta">
               <RotateCcw className="h-3 w-3" />Regenerar
