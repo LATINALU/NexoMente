@@ -13878,6 +13878,21 @@ body.nexo .pie-cine, body.nexo .zocalo, body.nexo .grabando-marca { display: non
       return n && n._visible ? n : null;
     }
 
+    // La neurona de cada experto: datos-mente/agentes/<categoría>/<id>.md
+    let neuronas = null;
+    function neuronaDe(id) {
+      if (!neuronas) {
+        neuronas = new Map();
+        nodos.forEach(n => {
+          const r = normRuta(n.ruta);
+          const m = /\/agentes\/[^/]+\/([^/]+)\.md$/.exec(r);
+          if (m) neuronas.set(m[1], n);
+        });
+      }
+      const n = neuronas.get(String(id).toLowerCase());
+      return n && n._visible ? n : null;
+    }
+
     function crearLuz(e, orden) {
       const el = document.createElement('div');
       el.className = 'nexo-luz';
@@ -13889,8 +13904,11 @@ body.nexo .pie-cine, body.nexo .zocalo, body.nexo .grabando-marca { display: non
       nombre.className = 'nexo-nombre';
       el.append(emoji, nombre);
       capa.appendChild(el);
-      return { id: e.id, el, emoji, nombre, color, estado: 'espera', orden, ang: orden * 2.4, cola: [], visitadas: 0,
-               desde: null, hacia: null, t0: performance.now(), dur: 1, x: NaN, y: NaN, fin: 0 };
+      const propia = neuronaDe(e.id);
+      const luz = { id: e.id, el, emoji, nombre, color, estado: 'espera', orden, ang: orden * 2.4, cola: [], visitadas: 0,
+                    desde: null, hacia: propia, propia, anterior: propia, t0: performance.now(), dur: 1, x: NaN, y: NaN, fin: 0 };
+      if (propia) { const p = puntoDe(propia); luz.x = p.x; luz.y = p.y; }
+      return luz;
     }
 
     function ir(luz, hacia, dur) {
@@ -13952,6 +13970,13 @@ body.nexo .pie-cine, body.nexo .zocalo, body.nexo .grabando-marca { display: non
       luz.estado = nuevo;
       luz.el.dataset.estado = nuevo;
       if (nuevo === 'piensa' || nuevo === 'escribe') {
+        // Se enciende su neurona: el experto elegido se despierta adentro del cerebro
+        if (luz.propia && !luz.despierta && listo() && !introCorriendo()) {
+          luz.despierta = true;
+          anim.efectos.push({ tipo: 'aro', n: luz.propia, t0: performance.now(), dur: 2200, color: luz.color });
+          disparar(luz.propia);
+          programarCuadro();
+        }
         if (!luz.cola.length && !luz.visitadas) {
           const propias = notas.map(nodoDe).filter(Boolean);
           const corte = propias.length ? luz.orden % propias.length : 0;
@@ -14003,7 +14028,7 @@ body.nexo .pie-cine, body.nexo .zocalo, body.nexo .grabando-marca { display: non
         const meta = puntoDe(luz.hacia);
         // Ronda alrededor de su ancla: en espera, cerca del centro; trabajando, sobre su nota
         luz.ang += luz.estado === 'escribe' ? 0.045 : 0.018;
-        const radio = luz.estado === 'espera' ? 46 + luz.orden * 9 : activa ? (luz.hacia ? 18 : 34 + luz.orden * 10) : 0;
+        const radio = luz.estado === 'espera' ? (luz.hacia ? 10 : 46 + luz.orden * 9) : activa ? (luz.hacia ? 18 : 34 + luz.orden * 10) : 0;
         const ox = Math.cos(luz.ang) * radio;
         const oy = Math.sin(luz.ang) * radio * 0.6;
         const desde = luz.desde || meta;

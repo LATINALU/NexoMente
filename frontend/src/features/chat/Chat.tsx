@@ -19,7 +19,7 @@ import { ShareDialog } from "@/components/ShareDialog";
 import { useChatSession } from "./useChatSession";
 import { useRunTitle } from "./useRunTitle";
 import { BrainPanel } from "@/features/mente/BrainPanel";
-import { BrainStage } from "@/features/mente/BrainStage";
+import { BrainScreen } from "@/features/mente/BrainScreen";
 import { menteEstado } from "@/lib/mente";
 import { onChatCommand } from "./commands";
 import { Composer, ComposerHandle } from "./components/Composer";
@@ -231,16 +231,6 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
 
           <TeamBar />
 
-          {brainMode && menteLista ? (
-            <BrainStage
-              turn={path[path.length - 1]}
-              run={session.pendingTurnId && session.pendingTurnId === path[path.length - 1]?.id ? run : null}
-              pending={!!session.pendingTurnId && session.pendingTurnId === path[path.length - 1]?.id}
-              conversationId={session.conversationId}
-              canRemember={menteLista}
-              onExit={() => setBrainMode(false)}
-            />
-          ) : (
           <div className="flex-1 overflow-y-auto p-4" ref={scrollRef} onScroll={onScroll}>
             <div className="max-w-5xl mx-auto">
               {session.error && (
@@ -277,9 +267,8 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
             </div>
           </div>
 
-          )}
 
-          {!brainMode && awayFromBottom && path.length > 0 && (
+          {awayFromBottom && path.length > 0 && (
             <div className="relative">
               <button onClick={() => scrollToBottom(true)}
                 className="absolute -top-14 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-card/95 px-3 py-1.5 text-xs font-semibold text-primary shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 hover:bg-primary/10">
@@ -307,6 +296,28 @@ export function Chat({ onOpenSettings, onConnectionChange, sidePanelHeader }: Ch
             onNeedWebConfig={onOpenSettings}
           />
         </div>
+
+        {brainMode && menteLista && (() => {
+          const last = path[path.length - 1];
+          const pending = !!session.pendingTurnId && session.pendingTurnId === last?.id;
+          return (
+            <BrainScreen
+              turn={last}
+              run={pending ? run : null}
+              pending={pending}
+              processing={processing}
+              conversationId={session.conversationId}
+              canRemember={menteLista}
+              error={session.error}
+              notice={session.notice}
+              onSend={(text) => session.runQuery(text, tree.leafId)}
+              onStop={session.stop}
+              onNew={session.newConversation}
+              onDismiss={() => { session.setError(null); session.setNotice(null); }}
+              onExit={() => setBrainMode(false)}
+            />
+          );
+        })()}
 
         <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} path={path}
           title={path[0]?.user.content.slice(0, 80) || "Conversación de Nexo"} />

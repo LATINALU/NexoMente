@@ -117,6 +117,7 @@ def _mente_en(tmp_path, monkeypatch):
     from app.services import mente
     monkeypatch.setattr(mente, "NOTAS", tmp_path / "notas")
     monkeypatch.setattr(mente, "_refrescar_indice", lambda: None)
+    monkeypatch.setattr(mente, "_armar_cerebro", lambda: None)
     return mente
 
 
@@ -178,3 +179,46 @@ def test_neuromapa_adds_the_app_notes_as_a_source(tmp_path, monkeypatch):
     assert configuracion.fuente_de_la_app([{"id": "nexo"}]) == []
     monkeypatch.delenv("NEUROMAPA_NOTAS_APP")
     assert configuracion.fuente_de_la_app([]) == []
+
+
+def test_the_brain_is_nexo_one_neuron_per_expert_grouped_by_category(tmp_path):
+    import json
+    from app.agents.catalog import AGENTS, CATEGORY_SPECS
+    from app.services import cerebro_nexo
+    assert cerebro_nexo.armar(tmp_path, tmp_path / "notas") is True
+    neuronas = [f for f in (tmp_path / "agentes").glob("*/*.md") if f.name != "MEMORY.md"]
+    assert len(neuronas) == len(AGENTS)
+    assert len(list((tmp_path / "agentes").glob("*/MEMORY.md"))) == len(CATEGORY_SPECS)
+    config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    ids = [f["id"] for f in config["fuentes"]]
+    assert set(ids) == set(CATEGORY_SPECS) | {"nexo"}
+    assert not any(f.get("memoria") for f in config["fuentes"])  # nada de la memoria de Claude Code
+    assert all(f["lobulo"] in ("prefrontal", "frontal", "parietal", "occipital", "temporal", "cerebelo", "tronco")
+               for f in config["fuentes"])
+    assert set(cerebro_nexo.LOBULO_DE) == set(CATEGORY_SPECS)  # cada categoría tiene su lóbulo
+    marca = (tmp_path / "agentes" / "marketing" / "brand_strategist.md").read_text(encoding="utf-8")
+    assert "# 🎯 Brand Strategist" in marca and "](MEMORY.md)" in marca and "brand positioning" in marca
+    assert cerebro_nexo.armar(tmp_path, tmp_path / "notas") is False  # sin cambios no reescribe
+
+
+def test_related_experts_cross_categories(tmp_path):
+    from app.agents.catalog import AGENTS
+    from app.services import cerebro_nexo
+    afines = cerebro_nexo._afines(list(AGENTS.values()))
+    con = [a for a, lista in afines.items() if lista]
+    assert len(con) > len(AGENTS) // 2
+    assert all(b.category != AGENTS[a].category for a in con for b in afines[a])
+
+
+def test_a_hand_written_brain_config_is_respected(tmp_path):
+    from app.services import cerebro_nexo
+    (tmp_path / "config.json").write_text('{"fuentes": []}', encoding="utf-8")
+    assert cerebro_nexo.armar(tmp_path, tmp_path / "notas") is False
+    assert not (tmp_path / "agentes").exists()
+
+
+def test_only_nexomente_notes_are_cited(tmp_path, monkeypatch):
+    mente = _mente_en(tmp_path, monkeypatch)
+    (tmp_path / "notas").mkdir()
+    assert mente._es_nota_propia(str(tmp_path / "notas" / "plan.md"))
+    assert not mente._es_nota_propia(str(tmp_path / "agentes" / "marketing" / "seo.md"))

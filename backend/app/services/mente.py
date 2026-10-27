@@ -2,8 +2,10 @@
 NexoMente - Puente con Neuromapa
 ================================
 Neuromapa (carpeta neuromapa/, Python estándar) es la memoria de NexoMente:
-- buscar_notas(): el buscador BM25 de Neuromapa sobre tus notas (memoria de Claude Code,
-  CLAUDE.md y las fuentes de su config.json) para darles contexto citable [N#] a los agentes.
+- El cerebro es el de Nexo (cerebro_nexo.py): una neurona por experto, agrupadas por categoría en
+  lóbulos, más las notas que guarda NexoMente. La memoria de Claude Code no entra.
+- buscar_notas(): el buscador BM25 de Neuromapa sobre las notas de NexoMente para darles contexto
+  citable [N#] a los agentes (las neuronas de los expertos no son notas: no se citan).
 - registrar_*(): anota en el registro en vivo de Neuromapa qué notas lee cada agente, así el
   cerebro 3D muestra la actividad de Nexo igual que la de Claude Code.
 - salud(): el resumen del médico (datos viejos, enlaces rotos…).
@@ -43,7 +45,7 @@ ORIGENES_APP = os.environ.get("NEXOMENTE_ORIGENES", "http://localhost:3000 http:
 MAX_NOTAS = 5
 CARACTERES_POR_NOTA = 1400
 RENGLONES_POR_PASAJE = 30
-ESPERA_SERVIDOR_S = 20
+ESPERA_SERVIDOR_S = 40
 
 _lock = threading.Lock()
 _importado = False
@@ -64,11 +66,21 @@ def _preparar() -> None:
         if not (NEUROMAPA / "buscador.py").is_file():
             raise MenteNoDisponible(f"No se encontró Neuromapa en {NEUROMAPA}")
         DATOS.mkdir(parents=True, exist_ok=True)
+        _armar_cerebro()
         os.environ.setdefault("CLAUDE_PLUGIN_OPTION_CARPETA_DATOS", str(DATOS))
         os.environ.setdefault("NEUROMAPA_NOTAS_APP", str(NOTAS))
         if str(NEUROMAPA) not in sys.path:
             sys.path.insert(0, str(NEUROMAPA))
         _importado = True
+
+
+def _armar_cerebro() -> None:
+    """Las neuronas de los expertos y la configuración del mapa (si cambia, el mapa se reinicia al abrirlo)."""
+    try:
+        from app.services import cerebro_nexo
+        cerebro_nexo.armar(DATOS, NOTAS)
+    except Exception as e:  # sin las neuronas el mapa igual abre, con lo que haya
+        logger.warning("No se pudo armar el cerebro de Nexo: %s", e)
 
 
 def disponible() -> bool:
@@ -101,9 +113,14 @@ def buscar_notas(consulta: str, maximo: int = MAX_NOTAS) -> List[Dict[str, Any]]
     _preparar()
     import buscador  # noqa: E402 (Neuromapa, cargado tras _preparar)
     indice = buscador.desde_disco(guardado=True, esperar=True)
-    resultado = indice.buscar(consulta, maximo)
+    # Se pide de más: en el índice también están las neuronas de los expertos, que no se citan
+    resultado = indice.buscar(consulta, maximo * 8)
     notas = []
     for r in resultado.get("resultados") or []:
+        if len(notas) >= maximo:
+            break
+        if not _es_nota_propia(r.get("ruta", "")):
+            continue
         secciones = r.get("secciones") or []
         linea = int(secciones[0].get("linea") or 1) if secciones else 1
         contenido = _pasaje(r["ruta"], linea) or (secciones[0].get("fragmento", "") if secciones else "")
@@ -112,6 +129,13 @@ def buscar_notas(consulta: str, maximo: int = MAX_NOTAS) -> List[Dict[str, Any]]
         notas.append({"ruta": r["ruta"], "titulo": r.get("titulo") or Path(r["ruta"]).stem, "linea": linea,
                       "contenido": contenido, "puntaje": r.get("puntaje", 0), "descripcion": r.get("descripcion", "")})
     return notas
+
+
+def _es_nota_propia(ruta: str) -> bool:
+    try:
+        return Path(ruta).resolve().is_relative_to(NOTAS)
+    except (OSError, ValueError):
+        return False
 
 
 # ---------------------------------------------------------- registro en vivo
@@ -327,15 +351,31 @@ def _servidor_vivo() -> Optional[int]:
     return None
 
 
-def _arrancar_servidor() -> int:
+def _huella_config() -> str:
+    try:
+        return hashlib.sha1((DATOS / "config.json").read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _config_del_mapa() -> Path:
+    """Con qué configuración arrancó el mapa prendido (si es otra, tiene el cerebro viejo)."""
+    return _en_vivo() / "nexo-config-del-mapa.txt"
+
+
+def _arrancar_servidor(reiniciar: bool = False) -> int:
     entorno = dict(os.environ, NEUROMAPA_MARCOS=ORIGENES_APP, PYTHONIOENCODING="utf-8")
     banderas = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    subprocess.Popen([sys.executable, str(NEUROMAPA / "servidor.py"), "--sin-navegador"], cwd=str(NEUROMAPA),
+    # Al reiniciar, el nuevo apaga al de antes: se espera a que se anote otro proceso
+    previo = _leer_json(_en_vivo() / "servidor.json").get("pid") if reiniciar else None
+    opciones = ["--sin-navegador"] + (["--reiniciar"] if reiniciar else [])
+    subprocess.Popen([sys.executable, str(NEUROMAPA / "servidor.py"), *opciones], cwd=str(NEUROMAPA),
                      env=entorno, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=banderas)
     hasta = time.monotonic() + ESPERA_SERVIDOR_S
     while time.monotonic() < hasta:
         puerto = _servidor_vivo()
-        if puerto:
+        if puerto and (previo is None or _leer_json(_en_vivo() / "servidor.json").get("pid") != previo):
+            _config_del_mapa().write_text(_huella_config(), encoding="utf-8")
             return puerto
         time.sleep(0.3)
     raise MenteNoDisponible("El servidor del mapa no arrancó a tiempo")
@@ -382,7 +422,16 @@ def abrir_mapa() -> str:
     así la galleta de sesión del mapa funciona adentro del marco."""
     _preparar()
     with _lock:
-        puerto = _servidor_vivo() or _arrancar_servidor()
+        puerto = _servidor_vivo()
+        if not puerto:
+            puerto = _arrancar_servidor()
+        else:
+            try:
+                anotada = _config_del_mapa().read_text(encoding="utf-8").strip()
+            except OSError:
+                anotada = ""
+            if anotada != _huella_config():  # cambió el cerebro: el mapa prendido tiene la configuración vieja
+                puerto = _arrancar_servidor(reiniciar=True)
     numero = _pedir_entrada(puerto)
     if not numero:
         raise MenteNoDisponible("El servidor del mapa no entregó una entrada")
